@@ -64,7 +64,7 @@ All GIFs below are rendered at **128×128 resolution** to provide a fair compari
 </p>
 
 <p align="center">
-  <em>Left: Obamify | Right: IMDER (Disguise Algorithm)</em>
+  <em>Left: Obamify | Right: IMDER (Navigate Algorithm)</em>
 </p>
 
 ---
