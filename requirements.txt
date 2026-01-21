@@ -1,0 +1,9 @@
+# Image Processing
+opencv-python
+numpy
+
+# GUI Framework
+PyQt5
+
+# Image Manipulation
+Pillow
