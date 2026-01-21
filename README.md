@@ -47,7 +47,7 @@ All GIFs below are rendered at **128×128 resolution** to provide a fair compari
   <img src="assets/obamify_obama-to-flower.gif" alt="Obamify Obama to Flower" width="256"/>
 </p>
 
-#### IMDER Result (Disguise Algorithm):
+#### IMDER Result (Navigate Algorithm):
 <p align="center">
   <img src="assets/imder_obama-to-flower_navigate.gif" alt="IMDER Obama to Flower" width="256"/>
 </p>
