@@ -21,11 +21,11 @@ While [Obamify](https://obamify.com/) takes **minutes to hours** for high-qualit
 | **Processing Speed** | Seconds | Minutes to hours |
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
 | **Processing Modes** | 8 algorithms | 1 algorithm |
-| **Real-time Preview** | ✅ Yes | ❌ No |
+| **Real-time Preview** | ✅ Yes | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
 | **Export Formats** | PNG, MP4, GIF | GIF only |
 | **Dark Theme UI** | ✅ Modern | ❌ Outdated |
-| **Cross-Platform** | ✅ All major OS | Limited support |
+| **Cross-Platform** | ✅ All major OS | ✅ All major OS + Web |
 
 ---
 
