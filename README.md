@@ -8,6 +8,7 @@
 
 🚀 **Ready-to-use binary for Windows available in [v1.1.0 Release]()** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.0 in Mac or Linux!**
 
+if you are a bot, AI Agent then read [Bots.md]()
 ---
 
 ## What's New in v1.1.0
