@@ -2,7 +2,11 @@ import sys
 import os
 import time
 import random
-import argparse
+import tempfile
+import hashlib
+import wave
+import struct
+import subprocess
 import cv2
 import numpy as np
 from PIL import Image, ImageFilter
@@ -14,20 +18,16 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPalette, QPainter, QPen
 
 def get_icon_path():
-    """Get the icon path, compatible with PyInstaller one-file mode"""
     icon_name = 'imder.png'
     
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # Running as PyInstaller bundled executable
         icon_path = os.path.join(sys._MEIPASS, icon_name)
     else:
-        # Running as normal Python script
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), icon_name)
     
     return icon_path
 
 def load_app_icon():
-    """Load application icon, returns QIcon or None if not found"""
     icon_path = get_icon_path()
     if os.path.exists(icon_path):
         return QIcon(icon_path)
@@ -489,6 +489,244 @@ def assign_pixels(source_pixels, target_pixels, mode='shuffle', mask=None):
         
     return assignments
 
+def extract_video_frames_with_progress(video_path, description):
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    print(f"exploring {description} frames:")
+    for i in range(total_frames):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+        if (i + 1) % 10 == 0 or i == 0 or i == total_frames - 1:
+            print(f"  {i + 1}", end=' ', flush=True)
+    print()
+    print(f"{description} Frames = {len(frames)}")
+    
+    cap.release()
+    return frames, fps, len(frames)
+
+def is_video_file(path):
+    video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
+    return any(path.lower().endswith(ext) for ext in video_extensions)
+
+def process_frame_pair(base_frame, target_frame, algo_mode, resolution):
+    h_b, w_b = base_frame.shape[:2]
+    h_t, w_t = target_frame.shape[:2]
+    
+    limit_res = min(h_b, w_b, h_t, w_t)
+    process_res = min(resolution, limit_res)
+    
+    base_frame = cv2.resize(base_frame, (process_res, process_res))
+    target_frame = cv2.resize(target_frame, (process_res, process_res))
+    
+    base_frame = cv2.cvtColor(base_frame, cv2.COLOR_BGR2RGB)
+    target_frame = cv2.cvtColor(target_frame, cv2.COLOR_BGR2RGB)
+    
+    assignments = assign_pixels(base_frame, target_frame, algo_mode, None)
+    
+    source_flat = base_frame.reshape(-1, 3).astype(np.float32)
+    target_flat = target_frame.reshape(-1, 3).astype(np.float32)
+    
+    if algo_mode == 'disguise':
+        valid_pixel_indices = np.arange(len(source_flat))
+    elif algo_mode in ['pattern', 'navigate', 'swap', 'blend', 'fusion']:
+        valid_pixel_indices = np.where(assignments != -1)[0]
+    else:
+        valid_pixel_indices = np.arange(len(source_flat))
+    
+    width, height = process_res, process_res
+    start_x_all, start_y_all = np.meshgrid(np.arange(width), np.arange(height))
+    start_x_all = start_x_all.flatten()
+    start_y_all = start_y_all.flatten()
+    
+    start_x = start_x_all[valid_pixel_indices]
+    start_y = start_y_all[valid_pixel_indices]
+    source_colors = source_flat[valid_pixel_indices]
+    
+    dest_indices = assignments[valid_pixel_indices]
+    end_y = dest_indices // width
+    end_x = dest_indices % width
+    
+    t = 1.0
+    curr_x = (start_x + (end_x - start_x) * t).astype(int)
+    curr_y = (start_y + (end_y - start_y) * t).astype(int)
+    
+    curr_x = np.clip(curr_x, 0, width - 1)
+    curr_y = np.clip(curr_y, 0, height - 1)
+    
+    if algo_mode == 'disguise':
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+    elif algo_mode in ['navigate', 'swap', 'blend']:
+        frame = base_frame.copy()
+    elif algo_mode == 'fusion':
+        frame = base_frame.copy()
+    else:
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    current_colors = source_colors
+    current_colors = np.clip(current_colors, 0, 255).astype(np.uint8)
+    frame[curr_y, curr_x] = current_colors
+    
+    return frame
+
+def generate_sound_from_frame(frame, frame_duration, sample_rate=44100):
+    frame_bytes = frame.tobytes()
+    frame_hash = hashlib.sha256(frame_bytes).hexdigest()
+    
+    hash_int = int(frame_hash[:8], 16)
+    np.random.seed(hash_int)
+    
+    num_samples = int(sample_rate * frame_duration)
+    t = np.linspace(0, frame_duration, num_samples, False)
+    
+    frequencies = []
+    amplitudes = []
+    
+    for i in range(3):
+        freq_seed = int(frame_hash[i*4:(i+1)*4], 16)
+        freq = 50 + (freq_seed % 4000)
+        amp_seed = int(frame_hash[(i+3)*4:(i+4)*4], 16)
+        amp = 0.1 + (amp_seed % 9000) / 10000.0
+        frequencies.append(freq)
+        amplitudes.append(amp)
+    
+    sound = np.zeros(num_samples)
+    for freq, amp in zip(frequencies, amplitudes):
+        sound += amp * np.sin(2 * np.pi * freq * t)
+    
+    sound = sound / np.max(np.abs(sound)) if np.max(np.abs(sound)) > 0 else sound
+    sound = (sound * 32767).astype(np.int16)
+    
+    return sound, frame_hash
+
+def check_ffmpeg_available():
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def extract_audio_from_video(video_path, output_audio_path, duration=None, quality=30):
+    if not check_ffmpeg_available():
+        print("Error: ffmpeg is not installed or not found in PATH. Cannot extract audio.")
+        return False
+    
+    video_path = os.path.abspath(video_path)
+    if not os.path.exists(video_path):
+        print(f"Error: Video file not found: {video_path}")
+        return False
+    
+    cmd = ['ffmpeg', '-i', video_path]
+    
+    if duration:
+        cmd.extend(['-t', str(duration)])
+    
+    quality_map = {
+        10: '32k', 20: '64k', 30: '96k', 40: '128k', 50: '160k',
+        60: '192k', 70: '224k', 80: '256k', 90: '320k', 100: 'copy'
+    }
+    
+    bitrate = quality_map.get(quality, '96k')
+    
+    if bitrate == 'copy':
+        cmd.extend(['-c:a', 'copy'])
+    else:
+        cmd.extend(['-b:a', bitrate])
+    
+    cmd.extend(['-y', output_audio_path])
+    
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error extracting audio: {e}")
+        print(f"ffmpeg stderr: {e.stderr}")
+        return False
+
+def add_audio_to_video(video_path, frames, fps, output_path, sound_option='mute', target_audio_path=None, audio_quality=30):
+    if sound_option == 'mute':
+        return video_path
+    
+    if not check_ffmpeg_available():
+        print("Error: ffmpeg is not installed or not found in PATH. Cannot add audio.")
+        return video_path
+    
+    video_path = os.path.abspath(video_path)
+    if not os.path.exists(video_path):
+        print(f"Error: Video file not found: {video_path}")
+        return video_path
+    
+    temp_dir = tempfile.mkdtemp()
+    output_path = os.path.abspath(output_path)
+    
+    if sound_option == 'target-sound' and target_audio_path:
+        audio_path = os.path.join(temp_dir, "target_audio.mp3")
+        if os.path.exists(target_audio_path):
+            duration = len(frames) / fps if frames else None
+            if extract_audio_from_video(target_audio_path, audio_path, duration, audio_quality):
+                print(f"Using target video audio with {audio_quality}% quality")
+            else:
+                return video_path
+        else:
+            print(f"Error: Target audio file not found: {target_audio_path}")
+            return video_path
+    elif sound_option == 'sound':
+        frame_duration = 1.0 / fps
+        sample_rate = 44100
+        
+        print(f"\nGenerating sound for each frame:")
+        audio_chunks = []
+        total_frames = len(frames)
+        
+        for i, frame in enumerate(frames):
+            sound_data, frame_hash = generate_sound_from_frame(frame, frame_duration, sample_rate)
+            audio_chunks.append(sound_data)
+            
+            percent = ((i + 1) / total_frames) * 100
+            print(f"Frame {i + 1}/{total_frames} pixels analyzed for sound {percent:.1f}%")
+        
+        print(f"\nCompiling audio chunks:")
+        full_audio = np.concatenate(audio_chunks)
+        
+        audio_path = os.path.join(temp_dir, "audio.wav")
+        audio_path = os.path.abspath(audio_path)
+        with wave.open(audio_path, 'w') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(full_audio.tobytes())
+    else:
+        return video_path
+    
+    print(f"\nMerging audio with video...")
+    
+    cmd = [
+        'ffmpeg', '-i', video_path, '-i', audio_path,
+        '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
+        '-shortest', '-y', output_path
+    ]
+    
+    try:
+        print(f"Merging audio with video using ffmpeg...")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"Successfully added sound to video: {os.path.basename(output_path)}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error adding audio: {e}")
+        print(f"ffmpeg stderr: {e.stderr}")
+        return video_path
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return video_path
+    
+    import shutil
+    shutil.rmtree(temp_dir)
+    
+    return output_path
+
 class ProcessingThread(QThread):
     progress_signal = pyqtSignal(int)
     frame_signal = pyqtSignal(object)
@@ -496,7 +734,8 @@ class ProcessingThread(QThread):
     error_signal = pyqtSignal(str)
 
     def __init__(self, base_path, target_path, mode='preview', algo_mode='shuffle', 
-                 base_transforms=None, target_transforms=None, mask=None, resolution=128):
+                 base_transforms=None, target_transforms=None, mask=None, resolution=128,
+                 sound_option='mute', audio_quality=30):
         super().__init__()
         self.base_path = base_path
         self.target_path = target_path
@@ -506,6 +745,8 @@ class ProcessingThread(QThread):
         self.target_transforms = target_transforms or {'rotate': 0, 'flip': False}
         self.mask = mask
         self.resolution = resolution
+        self.sound_option = sound_option
+        self.audio_quality = audio_quality
         self.running = True
         self.output_dir = "results"
         if not os.path.exists(self.output_dir):
@@ -594,9 +835,19 @@ class ProcessingThread(QThread):
 
         if self.mode == 'export_video':
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(out_path, fourcc, 30.0, (width, height))
+            if self.sound_option != 'mute':
+                silent_path = os.path.join(self.output_dir, f"video_{timestamp}_silent.mp4")
+                silent_path = os.path.abspath(silent_path)
+                out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
+                out_path = os.path.abspath(out_path)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(silent_path, fourcc, 30.0, (width, height))
+                self.video_frames = []
+            else:
+                out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
+                out_path = os.path.abspath(out_path)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(out_path, fourcc, 30.0, (width, height))
         elif self.mode == 'export_gif':
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             out_path = os.path.join(self.output_dir, f"animation_{timestamp}.gif")
@@ -680,13 +931,23 @@ class ProcessingThread(QThread):
                 self.frame_signal.emit(qimg)
                 time.sleep(1/60)
             elif self.mode == 'export_video':
+                if self.sound_option != 'mute':
+                    self.video_frames.append(frame.copy())
                 out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
             elif self.mode == 'export_gif':
                 gif_frames.append(Image.fromarray(frame))
                 
         if self.mode == 'export_video':
             out.release()
-            self.finished_signal.emit(f"Saved to {out_path}")
+            if self.sound_option != 'mute':
+                final_path = add_audio_to_video(silent_path, self.video_frames, 30.0, out_path, 
+                                               self.sound_option, self.target_path if self.sound_option == 'target-sound' else None,
+                                               self.audio_quality)
+                if os.path.exists(silent_path):
+                    os.remove(silent_path)
+                self.finished_signal.emit(f"Saved to {final_path}")
+            else:
+                self.finished_signal.emit(f"Saved to {out_path}")
         elif self.mode == 'export_image':
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             out_path = os.path.join(self.output_dir, f"image_{timestamp}.png")
@@ -1430,6 +1691,9 @@ class ImderGUI(QMainWindow):
         res_text = self.res_combo.currentText()
         resolution = int(res_text.split('x')[0])
         
+        sound_option = 'mute'
+        audio_quality = 30
+        
         self.worker = ProcessingThread(
             self.base_panel.file_path, 
             self.target_panel.file_path,
@@ -1438,7 +1702,9 @@ class ImderGUI(QMainWindow):
             b_trans,
             t_trans,
             mask,
-            resolution
+            resolution,
+            sound_option,
+            audio_quality
         )
         self.worker.frame_signal.connect(self.update_preview)
         self.worker.progress_signal.connect(self.progress.setValue)
@@ -1531,10 +1797,10 @@ def validate_file_exists(path):
     print(f"Error: File not found: {path}")
     return False
 
-def validate_image_file(path):
+def validate_media_file(path):
     if not validate_file_exists(path):
         return False
-    valid_extensions = ['.png', '.jpg', '.jpeg', '.webp']
+    valid_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
     ext = os.path.splitext(path)[1].lower()
     if ext not in valid_extensions:
         print(f"Error: Invalid file format. Supported formats: {', '.join(valid_extensions)}")
@@ -1570,6 +1836,57 @@ def select_resolution():
             return resolutions[int(choice) - 1]
         print("Invalid choice. Please enter 1, 2, 3, 4, 5, or 6.")
 
+def select_sound_option(target_is_video=False):
+    print("\nSelect Sound Option:")
+    print("1. Mute (default)")
+    print("2. Sound (generate audio from pixel colors)")
+    
+    if target_is_video:
+        print("3. Target Sound (use audio from target video)")
+    
+    while True:
+        choice = input("Enter your choice (1-2" + (", 3" if target_is_video else "") + ", default 1): ").strip()
+        
+        if choice == '':
+            return 'mute', 30
+        elif choice == '1':
+            return 'mute', 30
+        elif choice == '2':
+            return 'sound', 30
+        elif choice == '3' and target_is_video:
+            return select_target_sound_quality()
+        else:
+            print(f"Invalid choice. Please enter 1, 2" + (", or 3" if target_is_video else "") + ".")
+
+def select_target_sound_quality():
+    print("\nSelect Target Sound Quality (1-10, where 10=100% original quality, 3=30% default):")
+    print("1. 10% (lowest quality)")
+    print("2. 20%")
+    print("3. 30% (default)")
+    print("4. 40%")
+    print("5. 50%")
+    print("6. 60%")
+    print("7. 70%")
+    print("8. 80%")
+    print("9. 90%")
+    print("10. 100% (original quality)")
+    
+    while True:
+        choice = input("Enter your choice (1-10, default 3): ").strip()
+        
+        if choice == '':
+            return 'target-sound', 30
+        
+        try:
+            quality = int(choice)
+            if 1 <= quality <= 10:
+                quality_percent = quality * 10
+                return 'target-sound', quality_percent
+            else:
+                print("Please enter a number between 1 and 10.")
+        except ValueError:
+            print("Please enter a valid number.")
+
 def print_progress_bar(iteration, total, prefix='Progress:', length=50, fill='â–ˆ'):
     percent = ("{0:.1f}").format(100 * (iteration / float(total)))
     filled_length = int(length * iteration // total)
@@ -1580,12 +1897,175 @@ def print_progress_bar(iteration, total, prefix='Progress:', length=50, fill='â–
     if iteration == total:
         print()
 
-def cli_process_and_export(base_path, target_path, algo_mode, resolution):
+def cli_video_process(base_path, target_path, algo_mode, resolution, sound_option='mute', audio_quality=30):
     print(f"\nProcessing: {os.path.basename(base_path)} -> {os.path.basename(target_path)}")
     print(f"Algorithm: {algo_mode}")
     print(f"Resolution: {resolution}x{resolution}")
+    print(f"Sound: {sound_option}" + (f" (quality: {audio_quality}%)" if sound_option == 'target-sound' else ""))
     print()
     
+    output_dir = "results"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    base_is_video = is_video_file(base_path)
+    target_is_video = is_video_file(target_path)
+    
+    if base_is_video:
+        print("Exploring Base frames:")
+        base_frames, base_fps, base_count = extract_video_frames_with_progress(base_path, "Base")
+    else:
+        print("Base is image, 1 frame")
+        base_img = cv2.imread(base_path)
+        if base_img is None:
+            print(f"Error: Could not load image {base_path}")
+            sys.exit(1)
+        base_frames = [base_img]
+        base_fps = 30
+        base_count = 1
+    
+    if target_is_video:
+        print("\nExploring Target frames:")
+        target_frames, target_fps, target_count = extract_video_frames_with_progress(target_path, "Target")
+    else:
+        print("Target is image, 1 frame")
+        target_img = cv2.imread(target_path)
+        if target_img is None:
+            print(f"Error: Could not load image {target_path}")
+            sys.exit(1)
+        target_frames = [target_img]
+        target_fps = 30
+        target_count = 1
+    
+    if base_is_video and target_is_video:
+        total_frames = min(base_count, target_count)
+        print(f"\nShorter video has {total_frames} frames")
+        
+        if base_count > total_frames:
+            print(f"\nExtracting first {total_frames} frames from Base:")
+            base_frames = base_frames[:total_frames]
+            for i in range(total_frames):
+                if (i + 1) % max(1, total_frames // 20) == 0 or i == 0 or i == total_frames - 1:
+                    percent = ((i + 1) / total_frames) * 100
+                    print(f"Extracting frames from Base {i + 1}/{total_frames} {percent:.1f}%")
+        
+        if target_count > total_frames:
+            print(f"\nExtracting first {total_frames} frames from Target:")
+            target_frames = target_frames[:total_frames]
+            for i in range(total_frames):
+                if (i + 1) % max(1, total_frames // 20) == 0 or i == 0 or i == total_frames - 1:
+                    percent = ((i + 1) / total_frames) * 100
+                    print(f"Extracting frames from Target {i + 1}/{total_frames} {percent:.1f}%")
+        
+        if base_count * base_fps <= target_count * target_fps:
+            fps = base_fps
+            duration = total_frames / base_fps
+        else:
+            fps = target_fps
+            duration = total_frames / target_fps
+    
+    elif base_is_video and not target_is_video:
+        total_frames = base_count
+        print(f"\nBase video has {total_frames} frames")
+        print("Target is image, will be repeated for each frame")
+        target_frames = [target_frames[0]] * total_frames
+        fps = base_fps
+        duration = total_frames / base_fps
+    
+    elif not base_is_video and target_is_video:
+        total_frames = target_count
+        print(f"\nTarget video has {total_frames} frames")
+        print("Base is image, will be repeated for each frame")
+        base_frames = [base_frames[0]] * total_frames
+        fps = target_fps
+        duration = total_frames / target_fps
+    
+    else:
+        total_frames = 1
+        fps = 30
+        duration = 1.0
+    
+    print(f"\nVideo processing starts:")
+    processed_frames = []
+    
+    for i in range(total_frames):
+        percent = ((i + 1) / total_frames) * 100
+        print(f"Frame {i + 1}/{total_frames} {percent:.1f}%")
+        
+        base_frame = base_frames[i]
+        target_frame = target_frames[i]
+        
+        processed_frame = process_frame_pair(base_frame, target_frame, algo_mode, resolution)
+        processed_frames.append(processed_frame)
+        
+        print(f"frame processing result .png saved in memory {i + 1}.png")
+    
+    print("\nframes processing finished")
+    
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    
+    if sound_option != 'mute':
+        silent_path = os.path.join(output_dir, f"video_{timestamp}_silent.mp4")
+        silent_path = os.path.abspath(silent_path)
+        video_path = os.path.join(output_dir, f"video_{timestamp}.mp4")
+        video_path = os.path.abspath(video_path)
+        gif_path = os.path.join(output_dir, f"animation_{timestamp}.gif")
+        
+        print("\nCompiling silent video:")
+        height, width = processed_frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(silent_path, fourcc, fps, (width, height))
+        
+        for i, frame in enumerate(processed_frames):
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            percent = ((i + 1) / total_frames) * 100
+            if (i + 1) % max(1, total_frames // 10) == 0 or i == 0 or i == total_frames - 1:
+                print(f"Frame {i + 1}/{total_frames} = {percent:.1f}%")
+        
+        out.release()
+        
+        target_audio_path = target_path if sound_option == 'target-sound' and target_is_video else None
+        final_video_path = add_audio_to_video(silent_path, processed_frames, fps, video_path, 
+                                             sound_option, target_audio_path, audio_quality)
+        if os.path.exists(silent_path):
+            os.remove(silent_path)
+        video_path = final_video_path
+    else:
+        video_path = os.path.join(output_dir, f"video_{timestamp}.mp4")
+        video_path = os.path.abspath(video_path)
+        gif_path = os.path.join(output_dir, f"animation_{timestamp}.gif")
+        
+        print("\nCompiling Frames to export:")
+        height, width = processed_frames[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+        
+        for i, frame in enumerate(processed_frames):
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            percent = ((i + 1) / total_frames) * 100
+            print(f"Frame {i + 1}/{total_frames} = {percent:.1f}%")
+        
+        out.release()
+    
+    print("\nexport result as gif:")
+    gif_frames = []
+    for i, frame in enumerate(processed_frames):
+        gif_frames.append(Image.fromarray(frame))
+        if (i + 1) % max(1, total_frames // 10) == 0 or i == 0 or i == total_frames - 1:
+            percent = ((i + 1) / total_frames) * 100
+            print(f"export result as gif {percent:.1f}%")
+    
+    if gif_frames:
+        gif_frames[0].save(gif_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=int(1000/fps), loop=0)
+    
+    print(f"\nprocessing finished, results saved to results/")
+    print(f"Video: {os.path.basename(video_path)}")
+    print(f"GIF: {os.path.basename(gif_path)}")
+    print(f"Duration: {duration:.1f}s, FPS: {fps:.1f}, Frames: {total_frames}")
+    
+    return processed_frames, fps, duration
+
+def cli_image_process(base_path, target_path, algo_mode, resolution, sound_option='mute', audio_quality=30):
     output_dir = "results"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -1607,7 +2087,9 @@ def cli_process_and_export(base_path, target_path, algo_mode, resolution):
             {'rotate': 0, 'flip': False},
             {'rotate': 0, 'flip': False},
             None,
-            resolution
+            resolution,
+            sound_option,
+            audio_quality
         )
         
         frames_processed = 0
@@ -1638,27 +2120,68 @@ def cli_process_and_export(base_path, target_path, algo_mode, resolution):
         
         print()
 
+def cli_process_and_export(base_path, target_path, algo_mode, resolution, sound_option='mute', audio_quality=30):
+    base_is_video = is_video_file(base_path)
+    target_is_video = is_video_file(target_path)
+    
+    if sound_option == 'target-sound' and not target_is_video:
+        print("Error: Target Sound option requires target to be a video file.")
+        sys.exit(1)
+    
+    if base_is_video or target_is_video:
+        if algo_mode == 'fusion':
+            print("Error: Fusion algorithm cannot be used with video files.")
+            sys.exit(1)
+        if algo_mode not in ['merge', 'shuffle']:
+            print("Warning: Video processing only supports merge or shuffle algorithms. Using merge.")
+            algo_mode = 'merge'
+        cli_video_process(base_path, target_path, algo_mode, resolution, sound_option, audio_quality)
+    else:
+        cli_image_process(base_path, target_path, algo_mode, resolution, sound_option, audio_quality)
+
 def interactive_cli_mode():
     while True:
         print_banner()
         
-        print("\n--- Image Selection ---")
+        print("\n--- Media Selection ---")
         base_path = get_input(
-            "Enter base image path (or drag & drop file): ",
-            validate_image_file
+            "Enter base media path (or drag & drop file): ",
+            validate_media_file
         )
         
         target_path = get_input(
-            "Enter target image path (or drag & drop file): ",
-            validate_image_file
+            "Enter target media path (or drag & drop file): ",
+            validate_media_file
         )
         
-        algo_mode = select_algorithm()
+        base_is_video = is_video_file(base_path)
+        target_is_video = is_video_file(target_path)
+        
+        if base_is_video or target_is_video:
+            print("\nVideo mode detected. Select algorithm:")
+            print("1. Merge (default)")
+            print("2. Shuffle")
+            choice = input("Enter your choice (1-2, default 1): ").strip()
+            if choice == '2':
+                algo_mode = 'shuffle'
+            else:
+                algo_mode = 'merge'
+            
+            if base_is_video and target_is_video:
+                print("Both files are videos. Will process frame-by-frame.")
+            elif base_is_video:
+                print("Base is video, target is image. Will process each frame with target image.")
+            else:
+                print("Base is image, target is video. Will process base image with each frame.")
+        else:
+            algo_mode = select_algorithm()
         
         resolution = select_resolution()
         
+        sound_option, audio_quality = select_sound_option(target_is_video)
+        
         print("\n--- Processing ---")
-        cli_process_and_export(base_path, target_path, algo_mode, resolution)
+        cli_process_and_export(base_path, target_path, algo_mode, resolution, sound_option, audio_quality)
         
         print("\n--- What's Next? ---")
         print("1. Blend Again")
@@ -1697,23 +2220,35 @@ if __name__ == "__main__":
     if is_cli:
         if len(sys.argv) - arg_offset < 2:
             print("Error: Missing required arguments. Usage:")
-            print("  python imder.py <base_path> <target_path> [algorithm] [resolution]")
+            print("  python imder.py <base_path> <target_path> [algorithm] [resolution] [sound_option] [quality]")
             print("  python imder.py cli [interactive mode]")
+            print("\nSound options: mute, sound, target-sound")
+            print("Quality: 1-10 (only for target-sound, default 3)")
             sys.exit(1)
         
         base_path = sys.argv[arg_offset]
         target_path = sys.argv[arg_offset + 1]
         
-        algo_mode = 'merge'
+        base_is_video = is_video_file(base_path)
+        target_is_video = is_video_file(target_path)
+        
+        if base_is_video or target_is_video:
+            algo_mode = 'merge'
+            if len(sys.argv) - arg_offset >= 3:
+                algo_mode = sys.argv[arg_offset + 2].lower()
+                if algo_mode not in ['merge', 'shuffle']:
+                    print("Warning: Video processing only supports merge or shuffle. Using merge.")
+                    algo_mode = 'merge'
+        else:
+            algo_mode = 'merge'
+            if len(sys.argv) - arg_offset >= 3:
+                algo_mode = sys.argv[arg_offset + 2].lower()
+                valid_algos = ['shuffle', 'merge', 'fusion']
+                if algo_mode not in valid_algos:
+                    print(f"Error: Invalid algorithm '{algo_mode}'. Valid options: {', '.join(valid_algos)}")
+                    sys.exit(1)
+        
         resolution = 512
-        
-        if len(sys.argv) - arg_offset >= 3:
-            algo_mode = sys.argv[arg_offset + 2].lower()
-            valid_algos = ['shuffle', 'merge', 'fusion']
-            if algo_mode not in valid_algos:
-                print(f"Error: Invalid algorithm '{algo_mode}'. Valid options: {', '.join(valid_algos)}")
-                sys.exit(1)
-        
         if len(sys.argv) - arg_offset >= 4:
             try:
                 resolution = int(sys.argv[arg_offset + 3])
@@ -1721,13 +2256,40 @@ if __name__ == "__main__":
                 print("Error: Resolution must be a number")
                 sys.exit(1)
         
+        sound_option = 'mute'
+        audio_quality = 30
+        if len(sys.argv) - arg_offset >= 5:
+            sound_option = sys.argv[arg_offset + 4].lower()
+            if sound_option == 'target-sound' and not target_is_video:
+                print("Error: Target Sound option requires target to be a video file.")
+                sys.exit(1)
+            
+            if sound_option not in ['mute', 'sound', 'target-sound']:
+                print("Warning: Sound option must be 'mute', 'sound', or 'target-sound'. Using mute.")
+                sound_option = 'mute'
+            
+            if len(sys.argv) - arg_offset >= 6 and sound_option == 'target-sound':
+                try:
+                    quality_input = int(sys.argv[arg_offset + 5])
+                    if 1 <= quality_input <= 10:
+                        audio_quality = quality_input * 10
+                    else:
+                        print("Warning: Quality must be between 1 and 10. Using default 3 (30%).")
+                        audio_quality = 30
+                except ValueError:
+                    print("Warning: Quality must be a number. Using default 3 (30%).")
+                    audio_quality = 30
+            elif len(sys.argv) - arg_offset >= 6 and sound_option != 'target-sound':
+                print("Warning: Quality parameter is only supported for 'target-sound' option. Ignoring.")
+        
         print_banner()
         print(f"\nCLI Mode: Processing {os.path.basename(base_path)} -> {os.path.basename(target_path)}")
         print(f"Algorithm: {algo_mode}")
         print(f"Resolution: {resolution}x{resolution}")
+        print(f"Sound: {sound_option}" + (f" (quality: {audio_quality}%)" if sound_option == 'target-sound' else ""))
         print()
         
-        cli_process_and_export(base_path, target_path, algo_mode, resolution)
+        cli_process_and_export(base_path, target_path, algo_mode, resolution, sound_option, audio_quality)
         
         print(f"\nAll outputs saved to: results/")
         sys.exit(0)
