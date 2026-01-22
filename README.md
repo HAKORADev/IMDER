@@ -12,21 +12,42 @@
 
 ## What's New in v1.1.0
 
-### 🔊 Audio Generation
-IMDER now generates **synchronized audio tracks** alongside your visual animations! Create complete multimedia experiences with:
+### 🎬 Video Processing Support (Major Update!)
+Transform videos like never before with our all-new video processing engine:
 
-- **Sound Synthesis** - Generate unique audio that matches your image transformation
-- **Quality Options** - Choose from Low, Medium, and High audio quality settings
-- **Seamless Integration** - Audio is automatically generated and exported with your animations
-- **Waveform Output** - Standard WAV format for maximum compatibility
+- **Video-to-Video**: Process two videos frame-by-frame for seamless pixel transitions
+- **Video-to-Image**: Transform each frame of a video using a static target image
+- **Image-to-Video**: Blend a static image into every frame of a video
+- **Supported Formats**: MP4, AVI, MOV, MKV, FLV, WMV
+- **Frame-Accurate Processing**: Each frame is individually processed for perfect synchronization
+- **Auto-Duration Matching**: Automatically matches video lengths for smooth output
 
-### 💻 Enhanced CLI Support
-Power users can now leverage IMDER's full capabilities from the command line:
+### 🔊 Advanced Audio Generation
+Create complete multimedia experiences with synchronized soundtracks:
 
-- **Windows Users**: Simply double-click `CLI.bat` or run it from Command Prompt
-- **Full Parameter Control**: Specify algorithms, resolution, and audio settings
-- **Batch Processing**: Script multiple transformations for workflow automation
-- **Quiet Mode**: Run without GUI for server-side or headless processing
+- **Pixel Sound Synthesis**: Generate unique audio based on each frame's pixel colors
+- **Target Audio Extraction**: Extract and use audio from target videos
+- **Quality Control**: 10 quality levels (10%-100%) for target audio preservation
+- **Seamless Integration**: Audio is merged with video output automatically
+- **Multiple Options**: Mute, Sound (generated), or Target-Sound (extracted)
+
+### 💻 Enhanced CLI Experience
+Power users now have complete control from the command line:
+
+- **Windows Users**: Simply double-click `CLI.bat` for instant CLI access
+- **Direct Processing**: `python imder.py <base> <target> [options]`
+- **Interactive Mode**: `python imder.py cli` with guided step-by-step prompts
+- **Smart Detection**: Automatically detects video vs image inputs
+- **Progress Tracking**: Real-time progress bars and detailed processing status
+- **Batch-Friendly**: Perfect for scripting and automation
+
+### 📦 Multi-Format Export
+Export your creations in any format you need:
+
+- **Frame (PNG)**: Static blended image output
+- **Animation (MP4)**: Full 30fps video with optional audio
+- **GIF**: Animated with customizable duration
+- **Video with Audio**: Merged soundtracks from pixel synthesis or target extraction
 
 ---
 
@@ -40,8 +61,9 @@ While [Obamify](https://obamify.com/) takes **minutes to hours** for high-qualit
 |---------|-------|---------|
 | **Processing Speed** | Seconds | Minutes to hours |
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
-| **Processing Modes** | 8 algorithms | 1 algorithm |
-| **Audio Generation** | ✅ Yes | ❌ No |
+| **Video Processing** | ✅ Full Support | ❌ No |
+| **Image Processing** | ✅ 8 Algorithms | ✅ 1 Algorithm |
+| **Audio Generation** | ✅ Pixel + Target | ❌ No |
 | **Real-time Preview** | ✅ Yes | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
 | **Export Formats** | PNG, MP4, GIF + Audio | GIF only |
@@ -114,7 +136,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 
 ## Features
 
-### 🎨 8 Powerful Processing Modes
+### 🎨 8 Powerful Processing Modes (Images)
 
 | Mode | Description |
 |------|-------------|
@@ -127,12 +149,23 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
 
-### 🔊 Audio Generation
+### 🎬 Video Processing Modes
 
-- **Synthesized Soundtracks** - Generate unique audio patterns based on your image data
-- **Quality Tiers** - Low (faster), Medium (balanced), High (maximum fidelity)
-- **WAV Export** - Industry-standard audio format
-- **Synchronized Output** - Audio length matches animation duration
+| Mode | Description |
+|------|-------------|
+| **Shuffle** | Random pixel swapping between video frames |
+| **Merge** | Grayscale sorting for smooth frame transitions |
+
+*Note: Advanced modes (Fusion, Pattern, Disguise, Navigate, Swap, Blend) are available for image processing only.*
+
+### 🔊 Audio Generation Options
+
+| Option | Description |
+|--------|-------------|
+| **Mute** | No audio (default) |
+| **Sound** | Synthesize audio from pixel colors |
+| **Target-Sound** | Extract and use audio from target video |
+| **Quality Levels** | 10%-100% for target audio preservation |
 
 ### 🖼️ Image Manipulation Tools
 
@@ -155,7 +188,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 - **Frame (PNG)** - Static blended image
 - **Animation (MP4)** - Full 30fps video
 - **GIF** - Animated with customizable duration
-- **Audio (WAV)** - Generated soundtracks (v1.1.0+)
+- **Video with Audio** - MP4 with synthesized or target audio
 
 ### 🎯 Advanced Shape Analysis
 
@@ -172,6 +205,7 @@ Unlike Obamify, IMDER allows you to:
 ### Prerequisites
 - Python 3.8+
 - pip
+- FFmpeg (required for video processing with audio)
 
 ### Install Dependencies
 
@@ -184,6 +218,18 @@ pip install -r requirements.txt
 - `opencv-python` - Advanced image processing
 - `numpy` - High-performance numerical operations
 - `Pillow` - Image handling
+
+### Install FFmpeg (Required for Video Audio)
+```bash
+# Windows (winget)
+winget install FFmpeg
+
+# macOS (brew)
+brew install ffmpeg
+
+# Linux (apt)
+sudo apt install ffmpeg
+```
 
 ### Run from Source
 
@@ -207,12 +253,15 @@ python src/imder.py cli
 **Direct Processing:**
 ```bash
 python src/imder.py <base_image> <target_image> [algorithm] [resolution]
+python src/imder.py <base_video> <target_video> merge 512
+python src/imder.py image.jpg video.mp4 shuffle 256 --sound target-sound 8
 ```
 
-**With Audio Generation:**
+**Sound Options:**
 ```bash
-python src/imder.py <base_image> <target_image> shuffle 512 --sound low
-python src/imder.py <base_image> <target_image> merge 1024 --sound high
+python imder.py base.png target.png shuffle 512 mute          # No audio
+python imder.py base.png target.png shuffle 512 sound         # Generated audio
+python imder.py base.mp4 target.mp4 merge 512 target-sound 8  # Target audio (quality 8)
 ```
 
 ---
@@ -227,17 +276,32 @@ python src/imder.py <base_image> <target_image> merge 1024 --sound high
 4. Click "Add Media" on both panels to load images
 5. Optionally, use Rotate/Flip to adjust images
 6. For advanced modes, use "Analyze Shapes" or draw custom masks
-7. Enable "Generate Audio" and select quality level
+7. Enable audio options if desired
 8. Click "Start Processing" to preview the animation
 9. Export as PNG, MP4, GIF, or with synchronized audio
 
 ### CLI Mode
 
-1. Open terminal/command prompt
-2. Navigate to IMDER directory
-3. Run: `python src/imder.py cli` or `CLI.bat` (Windows)
-4. Follow interactive prompts or use direct processing syntax
-5. Specify `--sound low|medium|high` for audio generation
+**Interactive (Guided):**
+1. Run: `python src/imder.py cli` or `CLI.bat` (Windows)
+2. Follow the prompts to select media files
+3. Choose algorithm, resolution, and audio options
+4. Watch real-time progress as processing completes
+
+**Direct (One-liner):**
+```bash
+# Image to Image
+python src/imder.py flower.png obama.png shuffle 512
+
+# Video to Video
+python src/imder.py video1.mp4 video2.mp4 merge 256
+
+# Image to Video with target audio
+python src/imder.py image.jpg video.mp4 merge 512 target-sound 7
+
+# Video to Image with pixel sound
+python src/imder.py video.mp4 image.png shuffle 256 sound
+```
 
 ### Try It Yourself
 
@@ -245,7 +309,7 @@ Compare the experience yourself:
 1. Visit [obamify.com](https://obamify.com/) - note the processing time and limitations
 2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)
 3. Experience the difference in speed, quality, and flexibility
-4. Try the new audio generation feature for complete multimedia output!
+4. Try video processing with audio—something Obamify can never do!
 
 ---
 
@@ -254,10 +318,11 @@ Compare the experience yourself:
 - **Pure Python** - Easy to read, modify, and contribute to
 - **PyQt5 GUI** - Modern, responsive interface with dark theme
 - **OpenCV & NumPy** - Industry-standard image processing
+- **FFmpeg Integration** - Professional-grade video handling
 - **Morton Code Ordering** - Efficient spatial pixel mapping
 - **K-Means Clustering** - Intelligent shape detection
 - **QThread Processing** - Non-blocking UI during operations
-- **Audio Synthesis** - Real-time sound generation from image data
+- **Frame-Accurate Video Processing** - Pixel-perfect video transformations
 
 ---
 
@@ -269,7 +334,7 @@ Compare the experience yourself:
 | 512×512 | ~8 seconds | Several minutes |
 | 2048×2048 | ~45 seconds | **Hours or crashes** |
 
-*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Audio generation adds minimal overhead (1-3 seconds).*
+*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Video processing time depends on frame count and selected resolution.*
 
 ---
 
@@ -283,7 +348,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 IMDER is open-source and welcomes contributions! Whether you want to:
 - Add new processing algorithms
-- Implement new audio synthesis methods
+- Implement new video effects
 - Improve the UI
 - Fix bugs
 - Add documentation
