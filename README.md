@@ -1,4 +1,4 @@
-# IMDER - Next-Generation Image Blender
+# IMDER - Image Blender
 
 <p align="center">
   <img src="src/imder.png" alt="IMDER Logo" width="128" height="128"/>
