@@ -7,3 +7,9 @@ PyQt5
 
 # Image Manipulation
 Pillow
+
+# CLI Enhancement (Optional - for ASCII banners)
+pyfiglet
+
+# Audio Processing
+ffmpeg-python
