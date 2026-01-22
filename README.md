@@ -6,7 +6,27 @@
 
 **IMDER** is a cutting-edge interactive image blender that creates smooth, mesmerizing animations blending pixels between two images. Unlike existing tools, IMDER delivers **superior quality, blazing-fast performance, and unmatched flexibility** that leaves the competition far behind.
 
-🚀 **Ready-to-use binaries for Windows, macOS, and Linux available in [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0)**
+🚀 **Ready-to-use binaries for Windows, macOS, and Linux available in [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)**
+
+---
+
+## What's New in v1.1.0
+
+### 🔊 Audio Generation
+IMDER now generates **synchronized audio tracks** alongside your visual animations! Create complete multimedia experiences with:
+
+- **Sound Synthesis** - Generate unique audio that matches your image transformation
+- **Quality Options** - Choose from Low, Medium, and High audio quality settings
+- **Seamless Integration** - Audio is automatically generated and exported with your animations
+- **Waveform Output** - Standard WAV format for maximum compatibility
+
+### 💻 Enhanced CLI Support
+Power users can now leverage IMDER's full capabilities from the command line:
+
+- **Windows Users**: Simply double-click `CLI.bat` or run it from Command Prompt
+- **Full Parameter Control**: Specify algorithms, resolution, and audio settings
+- **Batch Processing**: Script multiple transformations for workflow automation
+- **Quiet Mode**: Run without GUI for server-side or headless processing
 
 ---
 
@@ -21,9 +41,10 @@ While [Obamify](https://obamify.com/) takes **minutes to hours** for high-qualit
 | **Processing Speed** | Seconds | Minutes to hours |
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
 | **Processing Modes** | 8 algorithms | 1 algorithm |
+| **Audio Generation** | ✅ Yes | ❌ No |
 | **Real-time Preview** | ✅ Yes | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
-| **Export Formats** | PNG, MP4, GIF | GIF only |
+| **Export Formats** | PNG, MP4, GIF + Audio | GIF only |
 | **Dark Theme UI** | ✅ Modern | ❌ Outdated |
 | **Cross-Platform** | ✅ All major OS | ✅ All major OS + Web |
 
@@ -106,6 +127,13 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
 
+### 🔊 Audio Generation
+
+- **Synthesized Soundtracks** - Generate unique audio patterns based on your image data
+- **Quality Tiers** - Low (faster), Medium (balanced), High (maximum fidelity)
+- **WAV Export** - Industry-standard audio format
+- **Synchronized Output** - Audio length matches animation duration
+
 ### 🖼️ Image Manipulation Tools
 
 - **Rotate** - 90° increments (0°, 90°, 180°, 270°)
@@ -127,6 +155,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 - **Frame (PNG)** - Static blended image
 - **Animation (MP4)** - Full 30fps video
 - **GIF** - Animated with customizable duration
+- **Audio (WAV)** - Generated soundtracks (v1.1.0+)
 
 ### 🎯 Advanced Shape Analysis
 
@@ -165,6 +194,11 @@ python src/imder.py
 
 ### Command Line Usage
 
+**Windows CLI (easiest):**
+```batch
+CLI.bat
+```
+
 **Interactive Mode:**
 ```bash
 python src/imder.py cli
@@ -173,6 +207,12 @@ python src/imder.py cli
 **Direct Processing:**
 ```bash
 python src/imder.py <base_image> <target_image> [algorithm] [resolution]
+```
+
+**With Audio Generation:**
+```bash
+python src/imder.py <base_image> <target_image> shuffle 512 --sound low
+python src/imder.py <base_image> <target_image> merge 1024 --sound high
 ```
 
 ---
@@ -187,15 +227,25 @@ python src/imder.py <base_image> <target_image> [algorithm] [resolution]
 4. Click "Add Media" on both panels to load images
 5. Optionally, use Rotate/Flip to adjust images
 6. For advanced modes, use "Analyze Shapes" or draw custom masks
-7. Click "Start Processing" to preview the animation
-8. Export as PNG, MP4, or GIF
+7. Enable "Generate Audio" and select quality level
+8. Click "Start Processing" to preview the animation
+9. Export as PNG, MP4, GIF, or with synchronized audio
+
+### CLI Mode
+
+1. Open terminal/command prompt
+2. Navigate to IMDER directory
+3. Run: `python src/imder.py cli` or `CLI.bat` (Windows)
+4. Follow interactive prompts or use direct processing syntax
+5. Specify `--sound low|medium|high` for audio generation
 
 ### Try It Yourself
 
 Compare the experience yourself:
 1. Visit [obamify.com](https://obamify.com/) - note the processing time and limitations
-2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0)
+2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)
 3. Experience the difference in speed, quality, and flexibility
+4. Try the new audio generation feature for complete multimedia output!
 
 ---
 
@@ -207,6 +257,7 @@ Compare the experience yourself:
 - **Morton Code Ordering** - Efficient spatial pixel mapping
 - **K-Means Clustering** - Intelligent shape detection
 - **QThread Processing** - Non-blocking UI during operations
+- **Audio Synthesis** - Real-time sound generation from image data
 
 ---
 
@@ -218,7 +269,7 @@ Compare the experience yourself:
 | 512×512 | ~8 seconds | Several minutes |
 | 2048×2048 | ~45 seconds | **Hours or crashes** |
 
-*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions.*
+*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Audio generation adds minimal overhead (1-3 seconds).*
 
 ---
 
@@ -232,6 +283,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 IMDER is open-source and welcomes contributions! Whether you want to:
 - Add new processing algorithms
+- Implement new audio synthesis methods
 - Improve the UI
 - Fix bugs
 - Add documentation
@@ -245,4 +297,4 @@ Your contributions make IMDER better for everyone.
 
 Inspired by pixel manipulation techniques, with special thanks to the open-source computer vision community.
 
-**Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0)
+**Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)
