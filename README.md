@@ -205,7 +205,7 @@ Unlike Obamify, IMDER allows you to:
 ### Prerequisites
 - Python 3.8+
 - pip
-- FFmpeg (required for video processing with audio)
+- [FFmpeg](https://github.com/FFmpeg/FFmpeg) (REQUIRED for video processing with audio - must be installed and added to system PATH)
 
 ### Install Dependencies
 
