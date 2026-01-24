@@ -22,7 +22,7 @@ Introducing a powerful new morphing algorithm that creates stunning shape transi
 - **Enhanced Visual Effects**: Produces unique morphing animations unavailable in other tools
 
 ### 🐛 Fusion Algorithm Bugfix
-Improved stability and visual quality for the popular Fusion algorithm:
+Improved stability and visual quality for the Fusion algorithm:
 
 - **Mask Handling**: Fixed issues with shape masking in Fusion mode
 - **Color Blending**: Enhanced color transition smoothness
