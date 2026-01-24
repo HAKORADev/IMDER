@@ -6,9 +6,43 @@
 
 **IMDER** is a cutting-edge interactive image blender that creates smooth, mesmerizing animations blending pixels between two images. Unlike existing tools, IMDER delivers **superior quality, blazing-fast performance, and unmatched flexibility** that leaves the competition far behind.
 
-🚀 **Ready-to-use binary for Windows available in [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.0 in Mac or Linux!**
+🚀 **Ready-to-use binary for Windows available in [v1.1.1 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.1 in Mac or Linux!**
 
 if you are a bot, AI Agent then read [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
+---
+
+## What's New in v1.1.1
+
+### 🆕 Missform Algorithm
+Introducing a powerful new morphing algorithm that creates stunning shape transitions:
+
+- **Binary Morphing**: Creates smooth transitions between shapes using pixel position interpolation
+- **Shape-Aware Processing**: Uses binary masks to identify and transform distinct shapes
+- **Video Support**: Works seamlessly with video processing alongside image processing
+- **Enhanced Visual Effects**: Produces unique morphing animations unavailable in other tools
+
+### 🐛 Fusion Algorithm Bugfix
+Improved stability and visual quality for the popular Fusion algorithm:
+
+- **Mask Handling**: Fixed issues with shape masking in Fusion mode
+- **Color Blending**: Enhanced color transition smoothness
+- **Consistent Output**: More reliable results across different image types
+- **Performance Optimization**: Faster processing with better memory management
+
+### 🎬 Enhanced Video Processing
+Expanded video support to include the new Missform algorithm for stunning video-to-video transformations:
+
+- **Missform Video Support**: Apply shape morphing between video sequences
+- **Extended Algorithm Choices**: Now 3 algorithms available for video processing (Shuffle, Merge, Missform)
+- **Better Frame Handling**: Improved synchronization for mixed media types
+
+### 📦 Download the Latest
+Get the newest features and improvements:
+
+- **Windows**: [v1.1.1 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1) (ready-to-use binary)
+- **Source Code**: Updated with all new algorithms and bug fixes
+- **Cross-Platform**: Available for all major operating systems
+
 ---
 
 ## What's New in v1.1.0
@@ -63,7 +97,7 @@ While [Obamify](https://obamify.com/) takes **minutes to hours** for high-qualit
 | **Processing Speed** | Seconds | Minutes to hours |
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
 | **Video Processing** | ✅ Full Support | ❌ No |
-| **Image Processing** | ✅ 8 Algorithms | ✅ 1 Algorithm |
+| **Image Processing** | ✅ **9 Algorithms** | ✅ 1 Algorithm |
 | **Audio Generation** | ✅ Pixel + Target | ❌ No |
 | **Real-time Preview** | ✅ Yes | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
@@ -137,13 +171,14 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 
 ## Features
 
-### 🎨 8 Powerful Processing Modes (Images)
+### 🎨 **9 Powerful Processing Modes (Images)**
 
 | Mode | Description |
 |------|-------------|
 | **Shuffle** | Random pixel swapping with brightness balance |
 | **Merge** | Grayscale sorting for smooth transitions |
-| **Fusion** | Artistic pixel sorting animations |
+| **Missform** | **NEW** Shape morphing through binary pixel interpolation |
+| **Fusion** | Artistic pixel sorting animations (now with bugfixes) |
 | **Pattern** | Texture transfer based on color quantization |
 | **Disguise** | Shape-aware transformations |
 | **Navigate** | Gradient-guided pixel movement |
@@ -156,6 +191,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 |------|-------------|
 | **Shuffle** | Random pixel swapping between video frames |
 | **Merge** | Grayscale sorting for smooth frame transitions |
+| **Missform** | **NEW** Shape morphing between video sequences |
 
 *Note: Advanced modes (Fusion, Pattern, Disguise, Navigate, Swap, Blend) are available for image processing only.*
 
@@ -272,7 +308,7 @@ python imder.py base.mp4 target.mp4 merge 512 target-sound 8  # Target audio (qu
 ### GUI Mode
 
 1. Launch: `python src/imder.py`
-2. Select processing mode from the dropdown
+2. Select processing mode from the dropdown (now with 9 options including **Missform**)
 3. Choose resolution (start with 256×256 for speed)
 4. Click "Add Media" on both panels to load images
 5. Optionally, use Rotate/Flip to adjust images
@@ -291,11 +327,11 @@ python imder.py base.mp4 target.mp4 merge 512 target-sound 8  # Target audio (qu
 
 **Direct (One-liner):**
 ```bash
-# Image to Image
-python src/imder.py flower.png obama.png shuffle 512
+# Image to Image with Missform
+python src/imder.py flower.png obama.png missform 512
 
-# Video to Video
-python src/imder.py video1.mp4 video2.mp4 merge 256
+# Video to Video with Missform
+python src/imder.py video1.mp4 video2.mp4 missform 256
 
 # Image to Video with target audio
 python src/imder.py image.jpg video.mp4 merge 512 target-sound 7
@@ -308,9 +344,9 @@ python src/imder.py video.mp4 image.png shuffle 256 sound
 
 Compare the experience yourself:
 1. Visit [obamify.com](https://obamify.com/) - note the processing time and limitations
-2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)
+2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)
 3. Experience the difference in speed, quality, and flexibility
-4. Try video processing with audio—something Obamify can never do!
+4. Try the new **Missform** algorithm and improved **Fusion** mode
 
 ---
 
@@ -322,6 +358,7 @@ Compare the experience yourself:
 - **FFmpeg Integration** - Professional-grade video handling
 - **Morton Code Ordering** - Efficient spatial pixel mapping
 - **K-Means Clustering** - Intelligent shape detection
+- **Binary Morphing** - New shape transition algorithm
 - **QThread Processing** - Non-blocking UI during operations
 - **Frame-Accurate Video Processing** - Pixel-perfect video transformations
 
@@ -363,4 +400,25 @@ Your contributions make IMDER better for everyone.
 
 Inspired by pixel manipulation techniques, with special thanks to the open-source computer vision community.
 
-**Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)
+**Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [v1.1.1 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)
+
+---
+
+## Changelog
+
+### v1.1.1 (Current)
+- Added **Missform algorithm** for shape morphing
+- Fixed bugs in **Fusion algorithm** for better stability
+- Extended video processing to support Missform
+- Improved overall performance and memory management
+
+### v1.1.0
+- Added video processing support
+- Implemented advanced audio generation
+- Enhanced CLI experience
+- Multi-format export capabilities
+
+### v1.0.0
+- Initial release with 8 image processing algorithms
+- Real-time preview and shape selection
+- Cross-platform GUI interface
