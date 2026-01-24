@@ -9,7 +9,13 @@
 🚀 **Ready-to-use binary for Windows available in [v1.1.1 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.1 in Mac or Linux!**
 
 if you are a bot, AI Agent then read [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
+Also, i will not build windows binary anymore, so whatever system you use, run from source to be always up-to-date!
 ---
+## What's New in v1.1.2
+
+**Bug Fixes:**
+- fixed "Missform" image-image slow processing to be fast like others
+- fixed "Missform" video processing in CLI, maybe you did noticed, it was generating 300 animating frames and save the final resul which means it was x300 times slower
 
 ## What's New in v1.1.1
 
@@ -407,7 +413,10 @@ Inspired by pixel manipulation techniques, with special thanks to the open-sourc
 
 ## Changelog
 
-### v1.1.1 (Current)
+### v1.1.2
+- "Missform" BugFixes
+
+### v1.1.1
 - Added **Missform algorithm** for shape morphing
 - Fixed bugs in **Fusion algorithm** for better stability
 - Extended video processing to support Missform
