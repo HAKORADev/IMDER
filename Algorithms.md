@@ -59,6 +59,7 @@ Shuffle maintains overall brightness distribution while creating a chaotic, ener
 - Maintains overall brightness
 - Medium visual coherence
 - Good for artistic abstraction
+- can be used for video processing to give CRT-like noise effect in low resolutions
 
 ---
 
@@ -110,6 +111,11 @@ Missform focuses on shape transformation rather than color blending. By working 
 - Logo morphing
 - When forms are more important than textures
 - Video processing (unique among advanced algorithms)
+
+**Pro Tips:**
+- use bright base to see better results
+- brighter base = more pixels to use = more details in the result = more computing
+- in video processing, use it with bright base image and video target, you will see unique results!
 
 **Example:**
 ```python
@@ -189,6 +195,10 @@ Pattern focuses on texture and pattern transfer rather than exact color matching
 - Stylized appearance
 - Good for artistic filters
 
+**Pro Tip:**
+- use pen to include a specific pixels from target image
+- use it in high-res images so you can get more smoothy result!
+
 ---
 
 ### Disguise
@@ -222,6 +232,10 @@ Disguise creates the illusion that shapes are transforming while actually just r
 - Puzzle-like rearrangement
 - Clever, subtle effects
 
+**Pro Tip:**
+- it remap the base pixels in the same area that selected in target shape
+- using empty base image or single or two colors base image with detailed target shape would give the best result for this algorithm!
+
 ---
 
 ### Navigate
@@ -253,6 +267,10 @@ Navigate creates complex, winding movement paths that feel organic and natural. 
 - Organic flow
 - Spatially coherent color movement
 - Artistic, abstract appeal
+
+**Pro Tip:**
+- it works like disguise, but uses best pixels from the whole image to the masked area from target in base
+- also less detailed base with detailed target mask will give the best results, still can be used with whatever images you set
 
 ---
 
@@ -373,13 +391,13 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 |-----------|---------------|----------|--------------|----------------|-------|---------------|
 | **Shuffle** | No | Abstract, random | Straight lines | Brightness groups | Fast | ✅ Yes |
 | **Merge** | No | Smooth transitions | Direct paths | Brightness sort | Fast | ✅ Yes |
-| **Missform** | No | Shape morphing | Shape paths | Binary mask focus | Medium | ✅ Yes |
+| **Missform** | No | Shape morphing | Shape paths | Binary mask focus | CPU killer | ✅ Yes |
 | **Fusion** | Optional | Selective transform | Direct paths | Color blending | Medium | ❌ No* |
-| **Pattern** | Yes | Texture transfer | Direct paths | Quantized colors | Medium | ❌ No |
-| **Disguise** | Yes | Color-preserving | Direct paths | Original colors | Medium | ❌ No |
+| **Pattern** | Yes | Texture transfer | Direct paths | Quantized colors | Fast | ❌ No |
+| **Disguise** | Yes | Color-preserving | Direct paths | Original colors | Fast | ❌ No |
 | **Navigate** | Yes | Organic flow | Curved paths | Spatial sorting | Slow | ❌ No |
 | **Swap** | Yes | Balanced exchange | Bidirectional | Best match colors | Slow | ❌ No |
-| **Blend** | Yes | Fluid dynamics | Swirling paths | Gradient guided | Slowest | ❌ No |
+| **Blend** | Yes | Fluid dynamics | Swirling paths | Gradient guided | Medium | ❌ No |
 
 *Fusion without mask works technically but not included due to transformation logic mismatch
 
@@ -393,7 +411,7 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 ### Performance Optimization
 1. **Preview at 128×128** - Test algorithms quickly before final render
 2. **Use appropriate resolution** - 512×512 is often optimal for quality/speed balance
-3. **Close other applications** - IMDER uses significant CPU/GPU resources
+3. **Close other applications** - IMDER uses significant CPU resources (use one core 100%)
 4. **Batch processing** - Use CLI for multiple transformations overnight
 
 ### Creative Applications
@@ -438,4 +456,4 @@ IMDER's 9 algorithms provide a comprehensive toolkit for image transformation, e
 
 Remember that **Shuffle**, **Merge**, and **Missform** are your go-to choices for video, while the full palette is available for still image transformations. Each algorithm opens different creative possibilities - experiment to discover which ones best suit your projects.
 
-**Pro Tip:** Keep a "algorithm test" folder where you run the same image pair through all 9 algorithms to build your intuition about each one's visual signature.
+**Pro Tip:** Keep an "algorithm test" folder where you run the same image pair through all 9 algorithms to build your intuition about each one's visual signature.
