@@ -23,7 +23,11 @@ def get_icon_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         icon_path = os.path.join(sys._MEIPASS, icon_name)
     else:
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), icon_name)
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        icon_path = os.path.join(base_dir, icon_name)
     
     return icon_path
 
@@ -250,6 +254,94 @@ def get_window_style():
         background-color: {THEME['background']};
         color: {THEME['text']};
     """
+
+class Missform:
+    def __init__(self, base_image, target_image, threshold=127):
+        self.base_image = base_image.astype(np.float32)
+        self.target_image = target_image.astype(np.float32)
+        self.threshold = threshold
+        
+    def _create_binary_mask(self, image):
+        gray = np.mean(image, axis=2)
+        binary = (gray > self.threshold).astype(np.uint8) * 255
+        return binary
+    
+    def interpolate_position(self, start_pos, end_pos, progress):
+        x = start_pos[0] + (end_pos[0] - start_pos[0]) * progress
+        y = start_pos[1] + (end_pos[1] - start_pos[1]) * progress
+        return (int(x), int(y))
+    
+    def generate_morph_sequence(self, duration=10, fps=30):
+        base_binary = self._create_binary_mask(self.base_image)
+        target_binary = self._create_binary_mask(self.target_image)
+        
+        base_positions = np.column_stack(np.where(base_binary == 255))
+        target_positions = np.column_stack(np.where(target_binary == 255))
+        
+        min_positions = min(len(base_positions), len(target_positions))
+        if min_positions == 0:
+            raise ValueError("No valid pixels found for morphing")
+            
+        base_positions = base_positions[:min_positions]
+        target_positions = target_positions[:min_positions]
+        
+        total_frames = int(duration * fps)
+        if total_frames <= 0:
+            total_frames = 1
+            
+        frames = []
+        height, width, _ = self.base_image.shape
+        
+        for frame_idx in range(total_frames):
+            progress = frame_idx / max(1, total_frames - 1)
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            for i in range(min_positions):
+                current_pos = self.interpolate_position(
+                    base_positions[i], 
+                    target_positions[i], 
+                    progress
+                )
+                
+                x, y = current_pos
+                if 0 <= x < height and 0 <= y < width:
+                    pixel_value = self.base_image[base_positions[i][0], base_positions[i][1]].astype(np.uint8)
+                    frame[x, y] = pixel_value
+            
+            frames.append(frame)
+        
+        return frames
+    
+    def generate_single_morph(self, progress):
+        base_binary = self._create_binary_mask(self.base_image)
+        target_binary = self._create_binary_mask(self.target_image)
+        
+        base_positions = np.column_stack(np.where(base_binary == 255))
+        target_positions = np.column_stack(np.where(target_binary == 255))
+        
+        min_positions = min(len(base_positions), len(target_positions))
+        if min_positions == 0:
+            raise ValueError("No valid pixels found for morphing")
+            
+        base_positions = base_positions[:min_positions]
+        target_positions = target_positions[:min_positions]
+        
+        height, width, _ = self.base_image.shape
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        for i in range(min_positions):
+            current_pos = self.interpolate_position(
+                base_positions[i], 
+                target_positions[i], 
+                progress
+            )
+            
+            x, y = current_pos
+            if 0 <= x < height and 0 <= y < width:
+                pixel_value = self.base_image[base_positions[i][0], base_positions[i][1]].astype(np.uint8)
+                frame[x, y] = pixel_value
+        
+        return frame
 
 def apply_opencv_transforms(img, rotate_steps, is_flipped):
     if img is None:
@@ -478,7 +570,7 @@ def assign_pixels(source_pixels, target_pixels, mode='shuffle', mask=None):
             np.random.shuffle(t_remain)
             assignments[s_remain] = t_remain
             
-    else: 
+    else:
         s_gray = np.mean(source_flat, axis=1)
         t_gray = np.mean(target_flat, axis=1)
         
@@ -526,6 +618,10 @@ def process_frame_pair(base_frame, target_frame, algo_mode, resolution):
     base_frame = cv2.cvtColor(base_frame, cv2.COLOR_BGR2RGB)
     target_frame = cv2.cvtColor(target_frame, cv2.COLOR_BGR2RGB)
     
+    if algo_mode == 'missform':
+        missform = Missform(base_frame, target_frame, threshold=127)
+        return missform.generate_single_morph(1.0)
+    
     assignments = assign_pixels(base_frame, target_frame, algo_mode, None)
     
     source_flat = base_frame.reshape(-1, 3).astype(np.float32)
@@ -563,7 +659,7 @@ def process_frame_pair(base_frame, target_frame, algo_mode, resolution):
     elif algo_mode in ['navigate', 'swap', 'blend']:
         frame = base_frame.copy()
     elif algo_mode == 'fusion':
-        frame = base_frame.copy()
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
     else:
         frame = np.zeros((height, width, 3), dtype=np.uint8)
     
@@ -784,6 +880,79 @@ class ProcessingThread(QThread):
         base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
         target_img = cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB)
         
+        if self.algo_mode == 'missform':
+            missform = Missform(base_img, target_img, threshold=127)
+            frames = 302
+            width, height = process_res, process_res
+            
+            if self.mode == 'export_video':
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                if self.sound_option != 'mute':
+                    silent_path = os.path.join(self.output_dir, f"video_{timestamp}_silent.mp4")
+                    silent_path = os.path.abspath(silent_path)
+                    out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
+                    out_path = os.path.abspath(out_path)
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(silent_path, fourcc, 30.0, (width, height))
+                    self.video_frames = []
+                else:
+                    out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
+                    out_path = os.path.abspath(out_path)
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(out_path, fourcc, 30.0, (width, height))
+            elif self.mode == 'export_gif':
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                out_path = os.path.join(self.output_dir, f"animation_{timestamp}.gif")
+                gif_frames = []
+            
+            for f in range(frames):
+                if not self.running:
+                    break
+                    
+                progress = f / (frames - 1)
+                self.progress_signal.emit(int(progress * 100))
+                
+                t = progress * progress * (3 - 2 * progress)
+                frame = missform.generate_single_morph(t)
+                
+                if self.mode == 'preview':
+                    h, w, ch = frame.shape
+                    bytes_per_line = ch * w
+                    qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                    self.frame_signal.emit(qimg)
+                    time.sleep(1/60)
+                elif self.mode == 'export_video':
+                    if self.sound_option != 'mute':
+                        self.video_frames.append(frame.copy())
+                    out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                elif self.mode == 'export_gif':
+                    gif_frames.append(Image.fromarray(frame))
+            
+            if self.mode == 'export_video':
+                out.release()
+                if self.sound_option != 'mute':
+                    final_path = add_audio_to_video(silent_path, self.video_frames, 30.0, out_path, 
+                                                   self.sound_option, self.target_path if self.sound_option == 'target-sound' else None,
+                                                   self.audio_quality)
+                    if os.path.exists(silent_path):
+                        os.remove(silent_path)
+                    self.finished_signal.emit(f"Saved to {final_path}")
+                else:
+                    self.finished_signal.emit(f"Saved to {out_path}")
+            elif self.mode == 'export_image':
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                out_path = os.path.join(self.output_dir, f"image_{timestamp}.png")
+                final_frame = missform.generate_single_morph(1.0)
+                cv2.imwrite(out_path, cv2.cvtColor(final_frame, cv2.COLOR_RGB2BGR))
+                self.finished_signal.emit(f"Saved to {out_path}")
+            elif self.mode == 'export_gif' and gif_frames:
+                gif_frames[0].save(out_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=33, loop=0)
+                self.finished_signal.emit(f"Saved to {out_path}")
+            else:
+                self.finished_signal.emit("Preview finished")
+            
+            return
+        
         proc_mask = None
         if self.algo_mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'] and self.mask is not None:
             proc_mask = cv2.resize(self.mask.astype(np.uint8), (process_res, process_res), interpolation=cv2.INTER_NEAREST)
@@ -898,13 +1067,9 @@ class ProcessingThread(QThread):
                 curr_y = np.clip(curr_y, 0, height - 1)
             
             if self.algo_mode == 'fusion' and self.mask is not None and shuffled_source_colors is not None:
-                frame = np.zeros((height, width, 3), dtype=np.uint8)
-                
-                unmasked_mask = proc_mask == 0
-                if np.any(unmasked_mask):
-                    frame[unmasked_mask] = base_img[unmasked_mask]
-                
                 current_colors = shuffled_source_colors * (1 - t) + target_colors_aligned * t
+            elif self.algo_mode == 'fusion' and self.mask is None:
+                current_colors = source_colors * (1 - t) + target_colors_aligned * t
             else:
                 current_colors = source_colors
             
@@ -918,7 +1083,10 @@ class ProcessingThread(QThread):
                 if self.mask is None:
                     frame = np.zeros((height, width, 3), dtype=np.uint8)
                 else:
-                    frame = base_img.copy()
+                    frame = np.zeros((height, width, 3), dtype=np.uint8)
+                    unmasked_mask = proc_mask == 0
+                    if np.any(unmasked_mask):
+                        frame[unmasked_mask] = base_img[unmasked_mask]
             else:
                  frame = np.zeros((height, width, 3), dtype=np.uint8)
                  
@@ -1085,6 +1253,7 @@ class MediaPanel(QFrame):
         
         self.pen_btn = QPushButton("Pen")
         self.pen_btn.setStyleSheet(get_surface_button_style())
+        self.pen_btn.setCursor(Qt.PointingHandCursor)
         self.pen_menu = QMenu()
         self.pen_menu.setStyleSheet(f"""
             QMenu {{
@@ -1446,6 +1615,7 @@ class ImderGUI(QMainWindow):
         self.mode_combo.addItems([
             "Shuffle", 
             "Merge", 
+            "Missform",
             "Fusion", 
             "Pattern", 
             "Disguise", 
@@ -1811,14 +1981,15 @@ def select_algorithm():
     print("\nSelect Algorithm:")
     print("1. Shuffle   - Randomly swap pixels between images")
     print("2. Merge     - Blend images with grayscale sorting")
-    print("3. Fusion    - Create animation with pixel sorting")
+    print("3. Missform  - Morph between binary pixel positions")
+    print("4. Fusion    - Create animation with pixel sorting")
     
     while True:
-        choice = input("\nEnter your choice (1-3): ").strip()
-        if choice in ['1', '2', '3']:
-            algorithms = ['shuffle', 'merge', 'fusion']
+        choice = input("\nEnter your choice (1-4): ").strip()
+        if choice in ['1', '2', '3', '4']:
+            algorithms = ['shuffle', 'merge', 'missform', 'fusion']
             return algorithms[int(choice) - 1]
-        print("Invalid choice. Please enter 1, 2, or 3.")
+        print("Invalid choice. Please enter 1, 2, 3, or 4.")
 
 def select_resolution():
     print("\nSelect Resolution:")
@@ -2132,8 +2303,8 @@ def cli_process_and_export(base_path, target_path, algo_mode, resolution, sound_
         if algo_mode == 'fusion':
             print("Error: Fusion algorithm cannot be used with video files.")
             sys.exit(1)
-        if algo_mode not in ['merge', 'shuffle']:
-            print("Warning: Video processing only supports merge or shuffle algorithms. Using merge.")
+        if algo_mode not in ['merge', 'shuffle', 'missform']:
+            print("Warning: Video processing only supports merge, shuffle, or missform algorithms. Using merge.")
             algo_mode = 'merge'
         cli_video_process(base_path, target_path, algo_mode, resolution, sound_option, audio_quality)
     else:
@@ -2161,9 +2332,12 @@ def interactive_cli_mode():
             print("\nVideo mode detected. Select algorithm:")
             print("1. Merge (default)")
             print("2. Shuffle")
-            choice = input("Enter your choice (1-2, default 1): ").strip()
+            print("3. Missform")
+            choice = input("Enter your choice (1-3, default 1): ").strip()
             if choice == '2':
                 algo_mode = 'shuffle'
+            elif choice == '3':
+                algo_mode = 'missform'
             else:
                 algo_mode = 'merge'
             
@@ -2236,14 +2410,14 @@ if __name__ == "__main__":
             algo_mode = 'merge'
             if len(sys.argv) - arg_offset >= 3:
                 algo_mode = sys.argv[arg_offset + 2].lower()
-                if algo_mode not in ['merge', 'shuffle']:
-                    print("Warning: Video processing only supports merge or shuffle. Using merge.")
+                if algo_mode not in ['merge', 'shuffle', 'missform']:
+                    print("Warning: Video processing only supports merge, shuffle, or missform. Using merge.")
                     algo_mode = 'merge'
         else:
             algo_mode = 'merge'
             if len(sys.argv) - arg_offset >= 3:
                 algo_mode = sys.argv[arg_offset + 2].lower()
-                valid_algos = ['shuffle', 'merge', 'fusion']
+                valid_algos = ['shuffle', 'merge', 'missform', 'fusion']
                 if algo_mode not in valid_algos:
                     print(f"Error: Invalid algorithm '{algo_mode}'. Valid options: {', '.join(valid_algos)}")
                     sys.exit(1)
