@@ -2,7 +2,7 @@
 
 All notable changes to IMDER - Image Blender will be documented in this file.
 
-## [v1.1.2] - 202X-01-24
+## [v1.1.2] - 2026-01-24
 
 ### Fixed
 - **Missform Algorithm Performance**: Fixed slow processing for image-image transformations to match the speed of other algorithms
