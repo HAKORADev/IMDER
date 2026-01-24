@@ -185,7 +185,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
 
-# More here: (Algorithms)[https://github.com/HAKORADev/IMDER/blob/main/Algorithms.md]
+# More here: [Algorithms.md](https://github.com/HAKORADev/IMDER/blob/main/Algorithms.md)
 
 ### 🎬 Video Processing Modes
 
