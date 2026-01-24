@@ -456,4 +456,6 @@ IMDER's 9 algorithms provide a comprehensive toolkit for image transformation, e
 
 Remember that **Shuffle**, **Merge**, and **Missform** are your go-to choices for video, while the full palette is available for still image transformations. Each algorithm opens different creative possibilities - experiment to discover which ones best suit your projects.
 
-**Pro Tip:** Keep an "algorithm test" folder where you run the same image pair through all 9 algorithms to build your intuition about each one's visual signature.
+**Pro Tip:**
+- Keep an "algorithm test" folder where you run the same image pair through all 9 algorithms to build your intuition about each one's visual signature.
+- use same media as base and target at the same time to apply effects and to see some magical stuff!
