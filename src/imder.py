@@ -260,11 +260,28 @@ class Missform:
         self.base_image = base_image.astype(np.float32)
         self.target_image = target_image.astype(np.float32)
         self.threshold = threshold
+        self._precompute_data()
         
     def _create_binary_mask(self, image):
         gray = np.mean(image, axis=2)
         binary = (gray > self.threshold).astype(np.uint8) * 255
         return binary
+    
+    def _precompute_data(self):
+        base_binary = self._create_binary_mask(self.base_image)
+        target_binary = self._create_binary_mask(self.target_image)
+        
+        base_positions = np.column_stack(np.where(base_binary == 255))
+        target_positions = np.column_stack(np.where(target_binary == 255))
+        
+        self.min_positions = min(len(base_positions), len(target_positions))
+        if self.min_positions == 0:
+            raise ValueError("No valid pixels found for morphing")
+            
+        self.base_positions = base_positions[:self.min_positions]
+        self.target_positions = target_positions[:self.min_positions]
+        self.base_colors = self.base_image[self.base_positions[:, 0], self.base_positions[:, 1]]
+        self.height, self.width, _ = self.base_image.shape
     
     def interpolate_position(self, start_pos, end_pos, progress):
         x = start_pos[0] + (end_pos[0] - start_pos[0]) * progress
@@ -272,74 +289,36 @@ class Missform:
         return (int(x), int(y))
     
     def generate_morph_sequence(self, duration=10, fps=30):
-        base_binary = self._create_binary_mask(self.base_image)
-        target_binary = self._create_binary_mask(self.target_image)
-        
-        base_positions = np.column_stack(np.where(base_binary == 255))
-        target_positions = np.column_stack(np.where(target_binary == 255))
-        
-        min_positions = min(len(base_positions), len(target_positions))
-        if min_positions == 0:
-            raise ValueError("No valid pixels found for morphing")
-            
-        base_positions = base_positions[:min_positions]
-        target_positions = target_positions[:min_positions]
-        
         total_frames = int(duration * fps)
         if total_frames <= 0:
             total_frames = 1
             
         frames = []
-        height, width, _ = self.base_image.shape
         
         for frame_idx in range(total_frames):
             progress = frame_idx / max(1, total_frames - 1)
-            frame = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            for i in range(min_positions):
-                current_pos = self.interpolate_position(
-                    base_positions[i], 
-                    target_positions[i], 
-                    progress
-                )
-                
-                x, y = current_pos
-                if 0 <= x < height and 0 <= y < width:
-                    pixel_value = self.base_image[base_positions[i][0], base_positions[i][1]].astype(np.uint8)
-                    frame[x, y] = pixel_value
-            
+            frame = self.generate_single_morph(progress)
             frames.append(frame)
         
         return frames
     
     def generate_single_morph(self, progress):
-        base_binary = self._create_binary_mask(self.base_image)
-        target_binary = self._create_binary_mask(self.target_image)
-        
-        base_positions = np.column_stack(np.where(base_binary == 255))
-        target_positions = np.column_stack(np.where(target_binary == 255))
-        
-        min_positions = min(len(base_positions), len(target_positions))
-        if min_positions == 0:
-            raise ValueError("No valid pixels found for morphing")
+        if self.min_positions == 0:
+            return np.zeros((self.height, self.width, 3), dtype=np.uint8)
             
-        base_positions = base_positions[:min_positions]
-        target_positions = target_positions[:min_positions]
+        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        t = progress * progress * (3 - 2 * progress)
         
-        height, width, _ = self.base_image.shape
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        current_x = (self.base_positions[:, 0] + (self.target_positions[:, 0] - self.base_positions[:, 0]) * t).astype(int)
+        current_y = (self.base_positions[:, 1] + (self.target_positions[:, 1] - self.base_positions[:, 1]) * t).astype(int)
         
-        for i in range(min_positions):
-            current_pos = self.interpolate_position(
-                base_positions[i], 
-                target_positions[i], 
-                progress
-            )
-            
-            x, y = current_pos
-            if 0 <= x < height and 0 <= y < width:
-                pixel_value = self.base_image[base_positions[i][0], base_positions[i][1]].astype(np.uint8)
-                frame[x, y] = pixel_value
+        mask = (current_x >= 0) & (current_x < self.height) & (current_y >= 0) & (current_y < self.width)
+        
+        if np.any(mask):
+            valid_x = current_x[mask]
+            valid_y = current_y[mask]
+            valid_colors = self.base_colors[mask].astype(np.uint8)
+            frame[valid_x, valid_y] = valid_colors
         
         return frame
 
@@ -2168,8 +2147,6 @@ def cli_video_process(base_path, target_path, algo_mode, resolution, sound_optio
         
         processed_frame = process_frame_pair(base_frame, target_frame, algo_mode, resolution)
         processed_frames.append(processed_frame)
-        
-        print(f"frame processing result .png saved in memory {i + 1}.png")
     
     print("\nframes processing finished")
     
@@ -2189,8 +2166,8 @@ def cli_video_process(base_path, target_path, algo_mode, resolution, sound_optio
         
         for i, frame in enumerate(processed_frames):
             out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            percent = ((i + 1) / total_frames) * 100
             if (i + 1) % max(1, total_frames // 10) == 0 or i == 0 or i == total_frames - 1:
+                percent = ((i + 1) / total_frames) * 100
                 print(f"Frame {i + 1}/{total_frames} = {percent:.1f}%")
         
         out.release()
@@ -2213,8 +2190,9 @@ def cli_video_process(base_path, target_path, algo_mode, resolution, sound_optio
         
         for i, frame in enumerate(processed_frames):
             out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-            percent = ((i + 1) / total_frames) * 100
-            print(f"Frame {i + 1}/{total_frames} = {percent:.1f}%")
+            if (i + 1) % max(1, total_frames // 10) == 0 or i == 0 or i == total_frames - 1:
+                percent = ((i + 1) / total_frames) * 100
+                print(f"Frame {i + 1}/{total_frames} = {percent:.1f}%")
         
         out.release()
     
