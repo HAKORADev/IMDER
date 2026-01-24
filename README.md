@@ -185,6 +185,8 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
 
+# More here: (Algorithms)[https://github.com/HAKORADev/IMDER/blob/main/Algorithms.md]
+
 ### 🎬 Video Processing Modes
 
 | Mode | Description |
@@ -346,7 +348,6 @@ Compare the experience yourself:
 1. Visit [obamify.com](https://obamify.com/) - note the processing time and limitations
 2. Download IMDER from our [releases page](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)
 3. Experience the difference in speed, quality, and flexibility
-4. Try the new **Missform** algorithm and improved **Fusion** mode
 
 ---
 
