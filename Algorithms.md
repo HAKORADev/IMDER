@@ -391,7 +391,7 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 |-----------|---------------|----------|--------------|----------------|-------|---------------|
 | **Shuffle** | No | Abstract, random | Straight lines | Brightness groups | Fast | ✅ Yes |
 | **Merge** | No | Smooth transitions | Direct paths | Brightness sort | Fast | ✅ Yes |
-| **Missform** | No | Shape morphing | Shape paths | Binary mask focus | CPU killer | ✅ Yes |
+| **Missform** | No | Shape morphing | Shape paths | Binary mask focus | Medium | ✅ Yes |
 | **Fusion** | Optional | Selective transform | Direct paths | Color blending | Medium | ❌ No* |
 | **Pattern** | Yes | Texture transfer | Direct paths | Quantized colors | Fast | ❌ No |
 | **Disguise** | Yes | Color-preserving | Direct paths | Original colors | Fast | ❌ No |
