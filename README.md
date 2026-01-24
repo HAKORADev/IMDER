@@ -6,7 +6,7 @@
 
 **IMDER** is a cutting-edge interactive image blender that creates smooth, mesmerizing animations blending pixels between two images. Unlike existing tools, IMDER delivers **superior quality, blazing-fast performance, and unmatched flexibility** that leaves the competition far behind.
 
-🚀 **Ready-to-use binary for Windows available in [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)** for macOS, and Linux [v1.0.0 Release]() **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.0 in Mac or Linux!**
+🚀 **Ready-to-use binary for Windows available in [v1.1.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.0)** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.0 in Mac or Linux!**
 
 if you are a bot, AI Agent then read [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
 ---
