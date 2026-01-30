@@ -66,63 +66,45 @@ def process(base, target, result, results, algo, res, sound, sq=None, sq_hz=None
     outs = []
     
     if bv or tv:
-        # NEW: 1:1 video frame trimming when both inputs are videos
         if bv and tv:
-            # Extract all frames from both videos
+            
             b_frames, b_fps, _ = extract_video_frames(b)
             t_frames, t_fps, _ = extract_video_frames(t)
             
-            # Use the SHORTER duration (1:1 frame matching)
+            
             min_frames = min(len(b_frames), len(t_frames))
             b_frames = b_frames[:min_frames]
             t_frames = t_frames[:min_frames]
             
-            # Use fps from the video that wasn't trimmed (or base if equal)
+            
             fps = b_fps if len(b_frames) >= len(t_frames) else t_fps
             
-            # Process pairs
+            
             frames = []
             for bf, tf in zip(b_frames, t_frames):
                 frames.append(process_pair(bf, tf, algo, res))
-        else:
-            # One is image, one is video (original logic)
-            bc = cv2.VideoCapture(b) if bv else None
-            tc = cv2.VideoCapture(t) if tv else None
+                
+        elif bv:
             
-            fcount = min(
-                int(bc.get(cv2.CAP_PROP_FRAME_COUNT)) if bc else 1,
-                int(tc.get(cv2.CAP_PROP_FRAME_COUNT)) if tc else 1
-            )
-            fps = 30
-            if bc:
-                fps = bc.get(cv2.CAP_PROP_FPS) or 30
-            elif tc:
-                fps = tc.get(cv2.CAP_PROP_FPS) or 30
+            v_frames, fps, _ = extract_video_frames(b)
+            img = cv2.imread(t)
+            if img is None:
+                raise ValueError(f"Failed to load target image: {t}")
             
             frames = []
-            for _ in range(fcount):
-                if bc:
-                    ret, bf = bc.read()
-                    if not ret:
-                        break
-                else:
-                    bf = cv2.imread(b)
-                    if bf is None:
-                        raise ValueError(f"Failed to load base image: {b}")
-                if tc:
-                    ret, tf = tc.read()
-                    if not ret:
-                        break
-                else:
-                    tf = cv2.imread(t)
-                    if tf is None:
-                        raise ValueError(f"Failed to load target image: {t}")
-                frames.append(process_pair(bf, tf, algo, res))
+            for vf in v_frames:
+                frames.append(process_pair(vf, img, algo, res))
+                
+        else:
             
-            if bc:
-                bc.release()
-            if tc:
-                tc.release()
+            img = cv2.imread(b)
+            if img is None:
+                raise ValueError(f"Failed to load base image: {b}")
+            v_frames, fps, _ = extract_video_frames(t)
+            
+            frames = []
+            for vf in v_frames:
+                frames.append(process_pair(img, vf, algo, res))
         
         if not frames:
             raise ValueError("No frames were processed. Check video files.")
@@ -153,7 +135,7 @@ def process(base, target, result, results, algo, res, sound, sq=None, sq_hz=None
                     os.rename(tp, p)
                     outs.append(p)
     else:
-        # Image processing (unchanged)
+        
         bimg = cv2.imread(b)
         if bimg is None:
             raise ValueError(f"Failed to load base image: {b}")
