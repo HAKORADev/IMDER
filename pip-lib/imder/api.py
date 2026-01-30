@@ -5,21 +5,52 @@ import numpy as np
 from PIL import Image
 from .core import process_pair, is_video, generate_sequence, add_audio
 
-def process(base, target, result, results, algo, res, sound, sq=None):
+def process(base, target, result, results, algo, res, sound, sq=None, sq_hz=None):
     b = os.path.abspath(base)
     t = os.path.abspath(target)
     r = os.path.abspath(result)
     
-    if not os.path.exists(b): raise FileNotFoundError(base)
-    if not os.path.exists(t): raise FileNotFoundError(t)
-    if not os.path.exists(r): os.makedirs(r)
+    if not os.path.exists(b):
+        raise FileNotFoundError(f"Base file not found: {base}")
+    if not os.path.exists(t):
+        raise FileNotFoundError(f"Target file not found: {target}")
+    if not os.path.exists(r):
+        os.makedirs(r)
+    
+    valid_results = ['png', 'gif', 'mp4']
+    if not results:
+        raise ValueError("Results list cannot be empty")
+    for fmt in results:
+        if fmt.lower() not in valid_results:
+            raise ValueError(f"Invalid format '{fmt}'. Valid: png, gif, mp4")
+    
+    valid_sounds = ['mute', 'gen', 'target']
+    if sound not in valid_sounds:
+        raise ValueError(f"Invalid sound option '{sound}'. Valid: mute, gen, target")
+    
+    if not isinstance(res, int) or res < 1 or res > 16384:
+        raise ValueError("Resolution must be integer between 1 and 16384")
+    
+    if sq is not None and sq_hz is not None:
+        raise ValueError("Cannot use both sq and sq_hz. Choose one.")
+    
+    if sq is not None:
+        if not isinstance(sq, int) or sq < 1 or sq > 10:
+            raise ValueError("SQ must be integer between 1 and 10")
+        sq = sq * 10
+    
+    if sq_hz is not None:
+        if sound != "target":
+            raise ValueError("sq_hz only valid with sound='target'")
+        if not isinstance(sq_hz, int) or sq_hz < 8000 or sq_hz > 192000:
+            raise ValueError("sq_hz must be integer between 8000 and 192000")
     
     bv = is_video(b)
     tv = is_video(t)
     
     if bv or tv:
         if algo not in ["shuffle", "merge", "missform"]:
-            raise ValueError(f"Video supports: shuffle, merge, missform")
+            raise ValueError(f"Video only supports: shuffle, merge, missform")
         if "png" in [x.lower() for x in results]:
             raise ValueError("PNG not supported for video input")
     else:
@@ -28,12 +59,6 @@ def process(base, target, result, results, algo, res, sound, sq=None):
     
     if sound == "target" and not tv:
         raise ValueError("Target sound requires video target")
-    if sq and sound != "target":
-        raise ValueError("SQ only valid with target sound")
-    if sq:
-        sq = int(sq) * 10
-        if not 10 <= sq <= 100:
-            raise ValueError("SQ must be 1-10")
     
     ts = time.strftime("%Y%m%d_%H%M%S")
     outs = []
@@ -47,25 +72,38 @@ def process(base, target, result, results, algo, res, sound, sq=None):
             int(tc.get(cv2.CAP_PROP_FRAME_COUNT)) if tc else 1
         )
         fps = 30
-        if bc: fps = bc.get(cv2.CAP_PROP_FPS) or 30
-        elif tc: fps = tc.get(cv2.CAP_PROP_FPS) or 30
+        if bc:
+            fps = bc.get(cv2.CAP_PROP_FPS) or 30
+        elif tc:
+            fps = tc.get(cv2.CAP_PROP_FPS) or 30
         
         frames = []
         for _ in range(fcount):
             if bc:
                 ret, bf = bc.read()
-                if not ret: break
+                if not ret:
+                    break
             else:
                 bf = cv2.imread(b)
+                if bf is None:
+                    raise ValueError(f"Failed to load base image: {b}")
             if tc:
                 ret, tf = tc.read()
-                if not ret: break
+                if not ret:
+                    break
             else:
                 tf = cv2.imread(t)
+                if tf is None:
+                    raise ValueError(f"Failed to load target image: {t}")
             frames.append(process_pair(bf, tf, algo, res))
         
-        if bc: bc.release()
-        if tc: tc.release()
+        if bc:
+            bc.release()
+        if tc:
+            tc.release()
+        
+        if not frames:
+            raise ValueError("No frames were processed. Check video files.")
         
         for fmt in results:
             fmt = fmt.lower().strip()
@@ -83,7 +121,8 @@ def process(base, target, result, results, algo, res, sound, sq=None):
                     out.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
                 out.release()
                 if sound != "mute":
-                    fp = add_audio(tp, frames, fps, p, sound, t if sound=="target" else None, sq or 30)
+                    quality_param = sq_hz if sq_hz is not None else (sq if sq is not None else 30)
+                    fp = add_audio(tp, frames, fps, p, sound, t if sound=="target" else None, quality_param, sq_hz is not None)
                     if os.path.exists(tp) and fp != tp:
                         os.remove(tp)
                     outs.append(fp)
@@ -92,7 +131,12 @@ def process(base, target, result, results, algo, res, sound, sq=None):
                     outs.append(p)
     else:
         bimg = cv2.imread(b)
+        if bimg is None:
+            raise ValueError(f"Failed to load base image: {b}")
         timg = cv2.imread(t)
+        if timg is None:
+            raise ValueError(f"Failed to load target image: {t}")
+        
         for fmt in results:
             fmt = fmt.lower().strip()
             if fmt == "png":
@@ -117,7 +161,8 @@ def process(base, target, result, results, algo, res, sound, sq=None):
                     out.release()
                     if sound != "mute":
                         ta = t if sound=="target" and tv else None
-                        fp = add_audio(tp, seq, 30, p, sound, ta, sq or 30)
+                        quality_param = sq_hz if sq_hz is not None else (sq if sq is not None else 30)
+                        fp = add_audio(tp, seq, 30, p, sound, ta, quality_param, sq_hz is not None)
                         if os.path.exists(tp) and fp != tp:
                             os.remove(tp)
                         outs.append(fp)
