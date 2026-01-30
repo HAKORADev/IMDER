@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "imder"
+version = "1.0.0"
+description = "Image and video pixel blending processor"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "opencv-python>=4.5.0",
+    "numpy>=1.21.0",
+    "Pillow>=9.0.0",
+    "pyfiglet>=0.8.0",
+]
+
+[project.scripts]
+imder = "imder.cli:main"
