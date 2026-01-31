@@ -12,6 +12,7 @@
   - [Navigate](#navigate)
   - [Swap](#swap)
   - [Blend](#blend)
+  - [Drawer](#drawer)
 - [Video Processing](#video-processing)
   - [Why Video Has Limited Algorithms](#why-video-has-limited-algorithms)
   - [Video Processing Design](#video-processing-design)
@@ -21,7 +22,7 @@
 
 ## Introduction
 
-IMDER features 9 distinct image processing algorithms, each designed for specific visual effects and use cases. Unlike tools that offer only one transformation method, IMDER gives you a toolkit of approaches, each with unique characteristics. This document explains how each algorithm works, when to use it, and what makes it special.
+IMDER features **10 distinct image processing algorithms** (increased from 9), each designed for specific visual effects and use cases. Unlike tools that offer only one transformation method, IMDER gives you a toolkit of approaches, each with unique characteristics. This document explains how each algorithm works, when to use it, and what makes it special.
 
 **Key Concepts:**
 - **Pixel Assignment**: How pixels from the base image map to positions in the target image
@@ -337,6 +338,98 @@ Blend simulates physical movement with forces and attractions. The gradient foll
 - Dynamic, energetic animation
 - Artistic, painterly style
 
+---
+
+### Drawer
+**What it does:** Transforms hand-drawn sketches into detailed target images while preserving artistic intent
+**How it works:**
+1. **Canvas System**: Operates on a 1024×1024 canvas with real-time drawing tools
+2. **Pixel Classification**: Automatically distinguishes drawn pixels (non-white) from canvas background (white, RGB ≥ 245)
+3. **Intelligent Distribution**: Assigns drawn pixels to target image positions based on brightness matching
+4. **Density Optimization**: Evenly distributes drawn pixels across the target to prevent clustering
+5. **Color-Aware Processing**: Considers both RGB values and brightness levels for optimal matching
+
+**Technical Implementation:**
+- **Background Detection**: Any pixel with RGB values all above 245 is treated as "white background" and ignored
+- **Brightness Sorting**: Drawn pixels are sorted by average brightness (R+G+B)/3
+- **Target Analysis**: All target pixels are sorted by brightness
+- **Adaptive Matching**: For N drawn pixels and M target pixels:
+  - If N ≤ M: Each drawn pixel gets matched to a unique target position
+  - If N > M: Drawn pixels are distributed to avoid repetition, ensuring all drawn pixels contribute
+
+**Why it's like that:**
+Drawer bridges the gap between freehand drawing and digital transformation. It respects the artist's stroke density, color choices, and composition while intelligently mapping them to complex target images. The white-background preservation allows for clean sketches that transform elegantly.
+
+**Best for:**
+- Converting sketches to photorealistic images
+- Artistic style transformations
+- Creative brainstorming and visualization
+- Educational demonstrations of drawing-to-reality concepts
+- Creating unique animations from simple drawings
+
+**Example:**
+```python
+# Base: Hand-drawn smiley face
+# Target: Detailed portrait photograph
+# Result: Simple drawing transforms into detailed portrait while maintaining facial structure
+```
+
+**Visual Characteristics:**
+- Maintains drawing composition and density
+- Elegant transformation from simple to complex
+- Respects color choices from the drawing
+- Creates surprising yet coherent results
+- Excellent for artistic explorations
+
+**Technical Details:**
+- **Canvas Size**: Fixed at 1024×1024 pixels for optimal performance and clarity
+- **Pen Tools**: Adjustable size (1-50 pixels), custom color selection, undo/redo support
+- **Background Handling**: Pure white (RGB ≥ 245) is treated as transparent/ignored
+- **Pixel Matching**: Uses advanced distribution algorithms to prevent pixel clustering
+
+**Creative Tips & Tricks:**
+
+1. **Color Palette Strategy**:
+   - Use varied colors in your drawing even for monochrome sketches - different RGB values create more matching opportunities
+   - For "invisible white" drawing, use colors like (254,254,254) instead of (255,255,255) - visually white but algorithmically active
+
+2. **Density Matters**:
+   - More drawn pixels = richer detail in final result
+   - Sparsely drawn areas will create elegant, minimalist transformations
+   - Dense drawings with many strokes yield highly detailed results
+
+3. **Hybrid Workflows**:
+   - **Draw → Transform**: Create in Drawer mode, then switch to any other mode with your drawing as base
+   - **Import → Modify**: Load an image as base, switch to Drawer to add annotations or modifications
+   - **Reverse Magic**: Draw something simple, add complex target, then use "Reverse Swap" to make the drawing become the target
+
+4. **Advanced Techniques**:
+   - **Layered Drawing**: Start with light colors, add darker details for hierarchical transformation
+   - **Negative Space**: Leave areas undrawn (white) to let the target image "fill in the gaps"
+   - **Color Coding**: Use specific colors to target different areas (e.g., blue for sky, green for grass)
+
+5. **Algorithm Intelligence**:
+   - The system automatically prevents pixel clustering - even if you draw a single dot, it will distribute intelligently
+   - Color variations are leveraged to match complex target patterns
+   - Brightness-based matching ensures logical transformations (dark strokes go to dark areas, etc.)
+
+6. **Canvas Optimization**:
+   - Use the full 1024×1024 space for maximum detail
+   - Thicker pens (size 20-30) for broad strokes, thinner pens (1-5) for fine details
+   - The undo/redo system allows for experimental drawing without risk
+
+**Pro Tips:**
+1. **For best results**: Draw with intentional strokes rather than random scribbles
+2. **Color experimentation**: Even slight color variations (e.g., different shades of gray) create more interesting transformations
+3. **Save iterations**: Export your drawing at different stages to use as bases for different algorithms
+4. **Combine with other algorithms**: A drawing created in Drawer mode can be used as base for Pattern, Disguise, or Navigate algorithms for unique layered effects
+5. **Educational use**: Perfect for demonstrating how simple shapes can transform into complex images
+6. **Multi Use**: One of the best things can be done with this mode is your drawings became base image when navigating to other modes
+
+**Technical Note**: Drawer mode includes a complete drawing engine with layer support (drawing over base images), adjustable tools, and real-time preview. The algorithm is optimized to handle everything from minimalist sketches to detailed drawings while ensuring visually pleasing transformations regardless of drawing complexity.
+
+---
+
 ## Video Processing
 
 ### Why Video Has Limited Algorithms
@@ -356,7 +449,13 @@ Fusion isn't included for video because:
 - The animation would just show pixels arriving at their already-visible destinations
 - **Useless in practice** - No meaningful visual effect for video sequences
 
-**3. Performance Considerations:**
+**3. Drawer Algorithm Limitation:**
+Drawer isn't included for video because:
+- **Interactive requirement** - Drawing is inherently an interactive, real-time process
+- **Temporal inconsistency** - Maintaining consistent drawings across hundreds of frames is impractical
+- **Performance impact** - Real-time drawing processing for each video frame would be computationally prohibitive
+
+**4. Performance Considerations:**
 - Video already processes hundreds to thousands of frames
 - Complex per-frame algorithms would multiply processing time exponentially
 - **Shuffle, Merge, and Missform** provide a good balance of visual variety and performance
@@ -398,6 +497,7 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 | **Navigate** | Yes | Organic flow | Curved paths | Spatial sorting | Slow | ❌ No |
 | **Swap** | Yes | Balanced exchange | Bidirectional | Best match colors | Slow | ❌ No |
 | **Blend** | Yes | Fluid dynamics | Swirling paths | Gradient guided | Medium | ❌ No |
+| **Drawer** | N/A (Canvas) | Sketch to reality | Direct paths | Drawing colors | Medium | ❌ No |
 
 *Fusion without mask works technically but not included due to transformation logic mismatch
 
@@ -405,20 +505,31 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 
 ### Algorithm Combinations
 1. **Multi-stage transformations**: Export frame from one algorithm, use as base for another
-2. **Resolution progression**: Start low-res for preview, final export at high-res
-3. **Selective masking**: Use different masks for different algorithm runs on same image pair
+2. **Drawer Hybrid Workflow**: Create base in Drawer mode, then process with Pattern/Disguise/Navigate for specialized effects
+3. **Resolution progression**: Start low-res for preview, final export at high-res
+4. **Selective masking**: Use different masks for different algorithm runs on same image pair
+
+### Drawer-Specific Techniques
+1. **Color Layering**: Start with light background colors, add progressively darker details
+2. **Selective Detail**: Draw detailed areas where you want transformation focus, leave other areas sparse
+3. **Import & Annotate**: Load any image as base, switch to Drawer to add annotations or modifications
+4. **Reverse Transformation**: Draw simple shapes, add complex target, use "Reverse Swap" in other modes
+5. **Invisible White**: Use (254,254,254) instead of pure white for "hidden" strokes that still affect transformation
 
 ### Performance Optimization
 1. **Preview at 128×128** - Test algorithms quickly before final render
 2. **Use appropriate resolution** - 512×512 is often optimal for quality/speed balance
 3. **Close other applications** - IMDER uses significant CPU resources (use one core 100%)
 4. **Batch processing** - Use CLI for multiple transformations overnight
+5. **Drawer Efficiency**: For complex drawings, use thicker pens for broad areas, save fine details for final passes
 
 ### Creative Applications
 1. **Logo animations** - Missform for shape, Merge for color transitions
 2. **Art style transfer** - Pattern algorithm for texture, Blend for painterly effects
 3. **Educational visualizations** - Swap for showing exchanges, Navigate for flow demonstrations
 4. **Abstract art generation** - Shuffle for randomness, Fusion for controlled chaos
+5. **Sketch-to-Reality** - Drawer for creative exploration, converting ideas to images
+6. **Hybrid Art**: Combine hand-drawn elements (Drawer) with photographic elements (other modes)
 
 ## Troubleshooting Guide
 
@@ -428,16 +539,24 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 - Try different algorithm - each works better with certain image types
 - Adjust image contrast/preprocessing before importing
 - Try different mask selections for mask-dependent algorithms
+- For Drawer: Ensure you're not using pure white (255,255,255) for active drawing
 
 **Processing is too slow:**
 - Reduce resolution (512×512 is often sufficient)
 - Close other resource-intensive applications
 - Use simpler algorithms (Shuffle/Merge are fastest)
+- For Drawer: Reduce canvas drawing complexity
 
 **Mask not working as expected:**
 - Use Pen tool for precise manual masks
 - Combine multiple segments for complex shapes
 - For Disguise/Swap, ensure mask covers areas with sufficient pixel variety
+
+**Drawer-specific issues:**
+- **Too few pixels drawn**: The algorithm intelligently distributes pixels, but very sparse drawings may create minimalist results
+- **Pure white strokes**: Use near-white (254,254,254) instead of pure white (255,255,255)
+- **Brush responsiveness**: Adjust pen size for different detail levels
+- **Canvas refresh issues**: Use the "Reset Canvas" option if drawing display becomes inconsistent
 
 **Video processing issues:**
 - Ensure FFmpeg is installed and in PATH
@@ -448,14 +567,18 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 
 ## Conclusion
 
-IMDER's 9 algorithms provide a comprehensive toolkit for image transformation, each with unique characteristics and best-use scenarios. Understanding these algorithms allows you to:
+IMDER's **10 algorithms** provide a comprehensive toolkit for image transformation, each with unique characteristics and best-use scenarios. Understanding these algorithms allows you to:
 - Choose the right tool for your creative vision
 - Combine techniques for complex effects
 - Optimize processing for your hardware
 - Create professional-quality transformations
 
+The addition of **Drawer mode** opens entirely new creative possibilities, allowing hand-drawn sketches to transform into detailed images. This bridges the gap between traditional drawing and digital transformation, making IMDER not just a tool for existing images, but also for creating new ones.
+
 Remember that **Shuffle**, **Merge**, and **Missform** are your go-to choices for video, while the full palette is available for still image transformations. Each algorithm opens different creative possibilities - experiment to discover which ones best suit your projects.
 
-**Pro Tip:**
-- Keep an "algorithm test" folder where you run the same image pair through all 9 algorithms to build your intuition about each one's visual signature.
-- use same media as base and target at the same time to apply effects and to see some magical stuff!
+**Pro Tips:**
+- Keep an "algorithm test" folder where you run the same image pair through all 10 algorithms to build your intuition about each one's visual signature.
+- Use same media as base and target at the same time to apply effects and to see some magical stuff!
+- **Drawer Exploration**: Try drawing the same simple shape and testing it with wildly different target images to understand the transformation patterns.
+- **Hybrid Creativity**: Don't limit yourself to one mode - the most interesting results often come from combining multiple algorithms in sequence.
