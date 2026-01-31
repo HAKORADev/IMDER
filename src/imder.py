@@ -1,3 +1,4 @@
+#v1.2.0
 import sys
 import os
 import time
@@ -13,9 +14,10 @@ from PIL import Image, ImageFilter
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QFileDialog, 
                              QMessageBox, QProgressBar, QFrame, QSizePolicy, 
-                             QDesktopWidget, QComboBox, QMenu, QAction)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
-from PyQt5.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPalette, QPainter, QPen
+                             QDesktopWidget, QComboBox, QMenu, QAction, QSlider,
+                             QColorDialog, QGridLayout)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect
+from PyQt5.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPalette, QPainter, QPen, QBrush
 
 def get_icon_path():
     icon_name = 'imder.png'
@@ -82,7 +84,7 @@ def get_main_button_style():
             border: 2px solid #E5E5E5;
         }
         QPushButton:pressed {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2=1, 
                 stop:0 #0e0e0e, stop:0.3 #121212, stop:0.7 #161616, stop:1 #0e0e0e);
             border: 2px solid #E5E5E5;
         }
@@ -96,7 +98,7 @@ def get_main_button_style():
 def get_secondary_button_style():
     return """
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+            background: qlineargradient(x1:0, y1:0, x2:1, y2=1, 
                 stop:0 #121212, stop:0.3 #121212, stop:0.7 #1a1a1a, stop:1 #121212);
             border: 2px solid #E5E5E5;
             border-radius: 8px;
@@ -106,7 +108,7 @@ def get_secondary_button_style():
             padding: 8px 16px;
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2=1, 
+            background: qlineargradient(x1:0, y1=0, x2:1, y2=1, 
                 stop:0 #121212, stop:0.3 #161616, stop:0.7 #1e1e1e, stop:1 #121212);
             border: 2px solid #E5E5E5;
         }
@@ -254,6 +256,181 @@ def get_window_style():
         background-color: {THEME['background']};
         color: {THEME['text']};
     """
+
+class DrawingCanvas(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.setMouseTracking(True)
+        self.drawing = False
+        self.last_point = QPoint()
+        self.pen_color = QColor(0, 0, 0)
+        self.pen_width = 5
+        self.original_size = QSize(1024, 1024)
+        self.current_scale = 1.0
+        self.canvas_offset = QPoint(0, 0)
+        
+        self.base_qimage = None
+        self.base_image_array = None
+        self.canvas_layer = QImage(self.original_size, QImage.Format_ARGB32)
+        self.canvas_layer.fill(Qt.transparent)
+        
+        self.history = []
+        self.redo_stack = []
+        self.max_history = 50
+        
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet(f"background-color: white; border: 1px solid {THEME['border']}; border-radius: 4px;")
+        self.setScaledContents(False)
+        
+    def set_pen_color(self, color):
+        self.pen_color = color
+        
+    def set_pen_width(self, width):
+        self.pen_width = max(1, min(50, width))
+        
+    def update_display(self):
+        if self.base_qimage:
+            combined = self.base_qimage.copy()
+        else:
+            combined = QImage(self.original_size, QImage.Format_ARGB32)
+            combined.fill(Qt.white)
+            
+        painter = QPainter(combined)
+        painter.drawImage(0, 0, self.canvas_layer)
+        painter.end()
+        
+        if not self.size().isEmpty():
+            scaled = combined.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            super().setPixmap(QPixmap.fromImage(scaled))
+    
+    def resizeEvent(self, event):
+        self.update_display()
+        super().resizeEvent(event)
+        
+    def get_scaled_point(self, pos):
+        if self.pixmap() and not self.pixmap().isNull():
+            pixmap_size = self.pixmap().size()
+            lbl_size = self.size()
+            
+            offset_x = (lbl_size.width() - pixmap_size.width()) // 2
+            offset_y = (lbl_size.height() - pixmap_size.height()) // 2
+            
+            scaled_x = pos.x() - offset_x
+            scaled_y = pos.y() - offset_y
+            
+            if 0 <= scaled_x < pixmap_size.width() and 0 <= scaled_y < pixmap_size.height():
+                scale_x = self.original_size.width() / pixmap_size.width()
+                scale_y = self.original_size.height() / pixmap_size.height()
+                
+                canvas_x = int(scaled_x * scale_x)
+                canvas_y = int(scaled_y * scale_y)
+                
+                canvas_x = max(0, min(canvas_x, self.original_size.width() - 1))
+                canvas_y = max(0, min(canvas_y, self.original_size.height() - 1))
+                
+                return QPoint(canvas_x, canvas_y)
+        return None
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drawing = True
+            point = self.get_scaled_point(event.pos())
+            if point:
+                self.last_point = point
+                self.save_to_history()
+                
+    def mouseMoveEvent(self, event):
+        if self.drawing:
+            point = self.get_scaled_point(event.pos())
+            if point:
+                self.draw_line(self.last_point, point)
+                self.last_point = point
+                
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.drawing:
+            self.drawing = False
+            
+    def draw_line(self, start, end):
+        painter = QPainter(self.canvas_layer)
+        painter.setPen(QPen(self.pen_color, self.pen_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawLine(start, end)
+        painter.end()
+        self.update_display()
+        
+    def save_to_history(self):
+        if len(self.history) >= self.max_history:
+            self.history.pop(0)
+        self.history.append(self.canvas_layer.copy())
+        self.redo_stack.clear()
+        
+    def undo(self):
+        if len(self.history) > 1:
+            self.redo_stack.append(self.history.pop())
+            self.canvas_layer = self.history[-1].copy()
+            self.update_display()
+            return True
+        return False
+        
+    def redo(self):
+        if self.redo_stack:
+            self.history.append(self.redo_stack.pop())
+            self.canvas_layer = self.history[-1].copy()
+            self.update_display()
+            return True
+        return False
+        
+    def clear(self):
+        self.canvas_layer = QImage(self.original_size, QImage.Format_ARGB32)
+        self.canvas_layer.fill(Qt.transparent)
+        self.history = [self.canvas_layer.copy()]
+        self.redo_stack.clear()
+        self.update_display()
+        
+    def get_image_array(self):
+        if self.base_qimage:
+            combined = self.base_qimage.copy()
+        else:
+            combined = QImage(self.original_size, QImage.Format_ARGB32)
+            combined.fill(Qt.white)
+            
+        painter = QPainter(combined)
+        painter.drawImage(0, 0, self.canvas_layer)
+        painter.end()
+        
+        img = combined.convertToFormat(QImage.Format_RGB888)
+        width = img.width()
+        height = img.height()
+        ptr = img.bits()
+        ptr.setsize(height * width * 3)
+        arr = np.array(ptr).reshape((height, width, 3))
+        arr_rgb = arr.copy()
+        arr_bgr = arr_rgb[:, :, ::-1]
+        return arr_bgr
+        
+    def set_base_image(self, image_array):
+        if image_array is None:
+            self.base_qimage = None
+            self.base_image_array = None
+            self.original_size = QSize(1024, 1024)
+            self.canvas_layer = QImage(self.original_size, QImage.Format_ARGB32)
+            self.canvas_layer.fill(Qt.transparent)
+            self.history = []
+            self.redo_stack = []
+        else:
+            height, width = image_array.shape[:2]
+            self.original_size = QSize(width, height)
+            bytes_per_line = 3 * width
+            qimg = QImage(image_array.data, width, height, bytes_per_line, QImage.Format_RGB888)
+            self.base_qimage = qimg.copy()
+            self.base_image_array = image_array.copy()
+            
+            self.canvas_layer = QImage(self.original_size, QImage.Format_ARGB32)
+            self.canvas_layer.fill(Qt.transparent)
+            self.history = [self.canvas_layer.copy()]
+            self.redo_stack.clear()
+        
+        self.update_display()
 
 class Missform:
     def __init__(self, base_image, target_image, threshold=127):
@@ -560,6 +737,48 @@ def assign_pixels(source_pixels, target_pixels, mode='shuffle', mask=None):
         
     return assignments
 
+def assign_drawer_pixels(base_pixels, target_pixels):
+    base_flat = base_pixels.reshape(-1, 3)
+    target_flat = target_pixels.reshape(-1, 3)
+
+    white_threshold = 245
+    base_is_white = np.all(base_flat > white_threshold, axis=1)
+    base_nonwhite_indices = np.where(~base_is_white)[0]
+
+    assignments = np.arange(len(base_flat), dtype=np.int32)
+
+    if len(base_nonwhite_indices) == 0:
+        return assignments
+
+    base_nonwhite = base_flat[base_nonwhite_indices]
+    base_gray = np.mean(base_nonwhite, axis=1)
+
+    target_gray = np.mean(target_flat, axis=1)
+
+    base_sorted = np.argsort(base_gray)
+    target_sorted = np.argsort(target_gray)
+
+    num_base = len(base_nonwhite_indices)
+    num_target = len(target_flat)
+
+    if num_base <= num_target:
+        for i, base_idx in enumerate(base_nonwhite_indices[base_sorted]):
+            target_idx = target_sorted[min(i, num_target - 1)]
+            assignments[base_idx] = target_idx
+    else:
+        used = set()
+        for i, base_idx in enumerate(base_nonwhite_indices[base_sorted]):
+            start = min(i, num_target - 1)
+            idx = start
+            while idx < num_target and target_sorted[idx] in used:
+                idx += 1
+            if idx >= num_target:
+                idx = num_target - 1
+            target_idx = target_sorted[idx]
+            used.add(target_idx)
+            assignments[base_idx] = target_idx
+
+    return assignments
 def extract_video_frames_with_progress(video_path, description):
     cap = cv2.VideoCapture(video_path)
     frames = []
@@ -601,7 +820,10 @@ def process_frame_pair(base_frame, target_frame, algo_mode, resolution):
         missform = Missform(base_frame, target_frame, threshold=127)
         return missform.generate_single_morph(1.0)
     
-    assignments = assign_pixels(base_frame, target_frame, algo_mode, None)
+    if algo_mode == 'drawer':
+        assignments = assign_drawer_pixels(base_frame, target_frame)
+    else:
+        assignments = assign_pixels(base_frame, target_frame, algo_mode, None)
     
     source_flat = base_frame.reshape(-1, 3).astype(np.float32)
     target_flat = target_frame.reshape(-1, 3).astype(np.float32)
@@ -810,7 +1032,7 @@ class ProcessingThread(QThread):
 
     def __init__(self, base_path, target_path, mode='preview', algo_mode='shuffle', 
                  base_transforms=None, target_transforms=None, mask=None, resolution=128,
-                 sound_option='mute', audio_quality=30):
+                 sound_option='mute', audio_quality=30, base_image_array=None):
         super().__init__()
         self.base_path = base_path
         self.target_path = target_path
@@ -822,6 +1044,7 @@ class ProcessingThread(QThread):
         self.resolution = resolution
         self.sound_option = sound_option
         self.audio_quality = audio_quality
+        self.base_image_array = base_image_array
         self.running = True
         self.output_dir = "results"
         if not os.path.exists(self.output_dir):
@@ -832,13 +1055,20 @@ class ProcessingThread(QThread):
             if self.algo_mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend'] and self.mask is None:
                 raise ValueError(f"{self.algo_mode.title()} mode requires analyzing shapes first.")
             
+            if self.algo_mode == 'drawer' and self.base_image_array is None:
+                raise ValueError("Drawer mode requires base drawing data.")
+                
             self.process_image()
                 
         except Exception as e:
             self.error_signal.emit(str(e))
 
     def process_image(self):
-        base_img = cv2.imread(self.base_path)
+        if self.algo_mode == 'drawer':
+            base_img = self.base_image_array
+        else:
+            base_img = cv2.imread(self.base_path)
+            
         target_img = cv2.imread(self.target_path)
         
         if base_img is None or target_img is None:
@@ -850,7 +1080,8 @@ class ProcessingThread(QThread):
         limit_res = min(h_b, w_b, h_t, w_t)
         process_res = min(self.resolution, limit_res)
         
-        base_img = apply_opencv_transforms(base_img, self.base_transforms['rotate'], self.base_transforms['flip'])
+        if self.algo_mode != 'drawer':
+            base_img = apply_opencv_transforms(base_img, self.base_transforms['rotate'], self.base_transforms['flip'])
         target_img = apply_opencv_transforms(target_img, self.target_transforms['rotate'], self.target_transforms['flip'])
         
         base_img = cv2.resize(base_img, (process_res, process_res))
@@ -932,11 +1163,14 @@ class ProcessingThread(QThread):
             
             return
         
-        proc_mask = None
-        if self.algo_mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'] and self.mask is not None:
-            proc_mask = cv2.resize(self.mask.astype(np.uint8), (process_res, process_res), interpolation=cv2.INTER_NEAREST)
-        
-        assignments = assign_pixels(base_img, target_img, self.algo_mode, proc_mask)
+        if self.algo_mode == 'drawer':
+            assignments = assign_drawer_pixels(base_img, target_img)
+        else:
+            proc_mask = None
+            if self.algo_mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'] and self.mask is not None:
+                proc_mask = cv2.resize(self.mask.astype(np.uint8), (process_res, process_res), interpolation=cv2.INTER_NEAREST)
+            
+            assignments = assign_pixels(base_img, target_img, self.algo_mode, proc_mask)
         
         frames = 302 
         width, height = process_res, process_res
@@ -1056,6 +1290,8 @@ class ProcessingThread(QThread):
             
             if self.algo_mode == 'disguise':
                  frame = np.zeros((height, width, 3), dtype=np.uint8)
+            elif self.algo_mode == 'drawer':
+                 frame = np.ones((height, width, 3), dtype=np.uint8) * 255
             elif self.algo_mode in ['navigate', 'swap', 'blend']:
                  frame = base_img.copy()
             elif self.algo_mode == 'fusion':
@@ -1145,8 +1381,8 @@ class ScalableImageLabel(QLabel):
             lbl_size = self.size()
             scaled_pixmap = self._pixmap.scaled(lbl_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             
-            dx = (lbl_size.width() - scaled_pixmap.width()) / 2
-            dy = (lbl_size.height() - scaled_pixmap.height()) / 2
+            dx = (lbl_size.width() - scaled_pixmap.width()) // 2
+            dy = (lbl_size.height() - scaled_pixmap.height()) // 2
             
             click_x = event.x() - dx
             click_y = event.y() - dy
@@ -1207,6 +1443,9 @@ class MediaPanel(QFrame):
         self.shapes = []
         self.current_shape = []
         self.manual_mask = None
+        self.drawing_canvas = None
+        self.drawer_mode = False
+        self.original_file_path = None
         self.setup_ui(title)
         
     def setup_ui(self, title):
@@ -1258,6 +1497,10 @@ class MediaPanel(QFrame):
         tools_layout.addWidget(self.analyze_btn)
         tools_layout.addWidget(self.pen_btn)
         
+        self.preview_container = QWidget()
+        preview_layout = QVBoxLayout(self.preview_container)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.preview = ScalableImageLabel()
         self.preview.clicked.connect(self.on_preview_clicked)
         self.preview.drawn.connect(self.on_preview_drawn)
@@ -1269,13 +1512,65 @@ class MediaPanel(QFrame):
         """)
         self.preview.setMinimumSize(200, 200)
         
+        preview_layout.addWidget(self.preview)
+        
         layout.addLayout(tools_layout)
-        layout.addWidget(self.preview, stretch=1)
+        layout.addWidget(self.preview_container, stretch=1)
         
         self.info_lbl = QLabel("No media loaded")
         self.info_lbl.setStyleSheet(get_subtitle_label_style())
         self.info_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.info_lbl)
+        
+        self.drawer_tools = QWidget()
+        drawer_layout = QGridLayout(self.drawer_tools)
+        drawer_layout.setContentsMargins(0, 0, 0, 0)
+        drawer_layout.setSpacing(5)
+        
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setStyleSheet(get_surface_button_style())
+        self.undo_btn.setCursor(Qt.PointingHandCursor)
+        self.undo_btn.clicked.connect(self.undo_drawing)
+        
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setStyleSheet(get_surface_button_style())
+        self.redo_btn.setCursor(Qt.PointingHandCursor)
+        self.redo_btn.clicked.connect(self.redo_drawing)
+        
+        self.color_btn = QPushButton("Color")
+        self.color_btn.setStyleSheet(get_surface_button_style())
+        self.color_btn.setCursor(Qt.PointingHandCursor)
+        self.color_btn.clicked.connect(self.pick_color)
+        
+        self.pen_size_slider = QSlider(Qt.Horizontal)
+        self.pen_size_slider.setRange(1, 50)
+        self.pen_size_slider.setValue(5)
+        self.pen_size_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #2a2a2a;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #4CAF50;
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }
+        """)
+        
+        self.pen_size_label = QLabel("Size: 5")
+        self.pen_size_label.setStyleSheet(get_subtitle_label_style())
+        
+        drawer_layout.addWidget(self.undo_btn, 0, 0)
+        drawer_layout.addWidget(self.redo_btn, 0, 1)
+        drawer_layout.addWidget(self.color_btn, 0, 2)
+        drawer_layout.addWidget(self.pen_size_label, 1, 0)
+        drawer_layout.addWidget(self.pen_size_slider, 1, 1, 1, 2)
+        
+        self.drawer_tools.setVisible(False)
+        layout.addWidget(self.drawer_tools)
         
         btn_layout = QHBoxLayout()
         
@@ -1308,9 +1603,111 @@ class MediaPanel(QFrame):
         self.flip_btn.clicked.connect(self.flip_media)
         self.flip_btn.setEnabled(False)
         
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setStyleSheet(get_surface_button_style())
+        self.clear_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_btn.clicked.connect(self.clear_drawing)
+        self.clear_btn.setVisible(False)
+
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setStyleSheet(get_surface_button_style())
+        self.reset_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_btn.clicked.connect(self.reset_canvas)
+        self.reset_btn.setVisible(False)
+        
         manip_layout.addWidget(self.rotate_btn)
         manip_layout.addWidget(self.flip_btn)
+        manip_layout.addWidget(self.reset_btn)
+        manip_layout.addWidget(self.clear_btn)
         layout.addLayout(manip_layout)
+        
+        self.pen_size_slider.valueChanged.connect(self.update_pen_size)
+
+    def set_drawer_mode(self, enabled):
+        was_drawer = self.drawer_mode
+        self.drawer_mode = enabled
+        if enabled:
+            if not self.drawing_canvas:
+                self.drawing_canvas = DrawingCanvas()
+            layout = self.preview_container.layout()
+            layout.replaceWidget(self.preview, self.drawing_canvas)
+            self.preview.setVisible(False)
+            self.drawing_canvas.setVisible(True)
+            self.drawing_canvas.clear()
+            self.update()
+            
+            self.add_btn.setVisible(False)
+            self.remove_btn.setVisible(False)
+            self.rotate_btn.setVisible(False)
+            self.flip_btn.setVisible(False)
+            self.clear_btn.setVisible(True)
+            self.reset_btn.setVisible(True)
+            self.drawer_tools.setVisible(True)
+            self.info_lbl.setText("Draw on canvas")
+            
+            if self.file_path:
+                img = cv2.imread(self.file_path)
+                if img is not None:
+                    img = apply_opencv_transforms(img, self.rotate_steps, self.is_flipped)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.drawing_canvas.set_base_image(img)
+                else:
+                    self.drawing_canvas.set_base_image(None)
+            else:
+                self.drawing_canvas.set_base_image(None)
+                
+        else:
+            if was_drawer and self.drawing_canvas:
+                drawing = self.drawing_canvas.get_image_array()
+                if drawing is not None:
+                    temp_path = os.path.join(tempfile.gettempdir(), f"imder_draw_{id(self)}_{int(time.time())}.png")
+                    cv2.imwrite(temp_path, drawing)
+                    self.file_path = temp_path
+                    self.original_file_path = temp_path
+                    self.update_preview()
+                    self.info_lbl.setText(f"Drawing ({drawing.shape[1]}x{drawing.shape[0]})")
+                layout = self.preview_container.layout()
+                layout.replaceWidget(self.drawing_canvas, self.preview)
+                self.drawing_canvas.setVisible(False)
+                self.preview.setVisible(True)
+                self.preview.update_display()
+                self.update()
+            self.add_btn.setVisible(True)
+            self.remove_btn.setVisible(True)
+            self.rotate_btn.setVisible(True)
+            self.flip_btn.setVisible(True)
+            self.clear_btn.setVisible(False)
+            self.reset_btn.setVisible(False)
+            self.drawer_tools.setVisible(False)
+            self.info_lbl.setText("No media loaded")
+
+    def undo_drawing(self):
+        if self.drawing_canvas:
+            self.drawing_canvas.undo()
+
+    def redo_drawing(self):
+        if self.drawing_canvas:
+            self.drawing_canvas.redo()
+
+    def pick_color(self):
+        if self.drawing_canvas:
+            color = QColorDialog.getColor(self.drawing_canvas.pen_color, self)
+            if color.isValid():
+                self.drawing_canvas.set_pen_color(color)
+
+    def update_pen_size(self, value):
+        if self.drawing_canvas:
+            self.drawing_canvas.set_pen_width(value)
+            self.pen_size_label.setText(f"Size: {value}")
+
+    def clear_drawing(self):
+        if self.drawing_canvas:
+            self.drawing_canvas.clear()
+
+    def reset_canvas(self):
+        if self.drawing_canvas:
+            self.drawing_canvas.set_base_image(None)
+            self.drawing_canvas.clear()
 
     def set_pen_mode(self, mode):
         self.pen_mode = mode
@@ -1434,6 +1831,11 @@ class MediaPanel(QFrame):
         mask = np.isin(self.segments, list(self.selected_segments))
         return mask
 
+    def get_drawing_array(self):
+        if self.drawing_canvas:
+            return self.drawing_canvas.get_image_array()
+        return None
+
     def load_media(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Open Media", "", "Images (*.png *.jpg *.jpeg *.webp)")
         if fname:
@@ -1441,9 +1843,11 @@ class MediaPanel(QFrame):
             self.media_loaded.emit(fname)
 
     def set_media_data(self, path, rotate_steps, is_flipped):
+        self.original_file_path = path
         self.file_path = path
         self.rotate_steps = rotate_steps
         self.is_flipped = is_flipped
+        self.base_image_array = None
         self.is_analyzing = False 
         self.segments = None
         self.pen_mode = None
@@ -1468,6 +1872,13 @@ class MediaPanel(QFrame):
             self.rotate_btn.setEnabled(True)
             self.flip_btn.setEnabled(True)
             self.update_preview()
+            
+            if self.drawer_mode and self.drawing_canvas:
+                img = cv2.imread(path)
+                if img is not None:
+                    img = apply_opencv_transforms(img, self.rotate_steps, self.is_flipped)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.drawing_canvas.set_base_image(img)
         else:
             self.clear_media()
 
@@ -1538,6 +1949,7 @@ class MediaPanel(QFrame):
 
     def clear_media(self):
         self.file_path = None
+        self.original_file_path = None
         self.rotate_steps = 0
         self.is_flipped = False
         self.is_analyzing = False
@@ -1554,16 +1966,34 @@ class MediaPanel(QFrame):
         self.rotate_btn.setEnabled(False)
         self.flip_btn.setEnabled(False)
         self.media_cleared.emit()
+        
+        if self.drawing_canvas:
+            self.drawing_canvas.set_base_image(None)
+            self.drawing_canvas.clear()
 
     def rotate_media(self):
         if self.file_path:
             self.rotate_steps = (self.rotate_steps + 1) % 4
             self.update_preview()
+            
+            if self.drawer_mode and self.drawing_canvas:
+                img = cv2.imread(self.file_path)
+                if img is not None:
+                    img = apply_opencv_transforms(img, self.rotate_steps, self.is_flipped)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.drawing_canvas.set_base_image(img)
 
     def flip_media(self):
         if self.file_path:
             self.is_flipped = not self.is_flipped
             self.update_preview()
+            
+            if self.drawer_mode and self.drawing_canvas:
+                img = cv2.imread(self.file_path)
+                if img is not None:
+                    img = apply_opencv_transforms(img, self.rotate_steps, self.is_flipped)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.drawing_canvas.set_base_image(img)
 
 class ImderGUI(QMainWindow):
     def __init__(self):
@@ -1600,7 +2030,8 @@ class ImderGUI(QMainWindow):
             "Disguise", 
             "Navigate", 
             "Swap", 
-            "Blend"
+            "Blend",
+            "Drawer"
         ])
         self.mode_combo.setToolTip("Select processing mode. All modes work with Images.")
         self.mode_combo.setStyleSheet(get_combo_box_style())
@@ -1753,13 +2184,29 @@ class ImderGUI(QMainWindow):
         self.cached_frames = []
 
     def on_mode_changed(self, text):
-        needs_analysis = "Pattern" in text or "Disguise" in text or "Navigate" in text or "Swap" in text or "Blend" in text or "Fusion" in text
-        self.target_panel.analyze_btn.setVisible(needs_analysis)
-        self.target_panel.pen_btn.setVisible(needs_analysis)
-        if not needs_analysis:
-            self.target_panel.stop_analysis()
+        mode = text.lower()
+        
+        if mode == 'drawer':
+            self.base_panel.set_drawer_mode(True)
+            self.target_panel.setEnabled(True)
+            self.reverse_btn.setEnabled(False)
+            self.check_ready()
+        else:
+            self.base_panel.set_drawer_mode(False)
+            self.target_panel.setEnabled(True)
+            self.reverse_btn.setEnabled(True)
+            self.target_panel.analyze_btn.setVisible(mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'])
+            self.target_panel.pen_btn.setVisible(mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'])
+            
+            if mode not in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion']:
+                self.target_panel.stop_analysis()
+            
+            self.check_ready()
 
     def swap_media(self):
+        if self.mode_combo.currentText().lower() == 'drawer':
+            return
+            
         b_path = self.base_panel.file_path
         b_rot = self.base_panel.rotate_steps
         b_flip = self.base_panel.is_flipped
@@ -1786,10 +2233,18 @@ class ImderGUI(QMainWindow):
         self.check_ready()
 
     def check_ready(self):
-        ready = bool(self.base_panel.file_path and self.target_panel.file_path)
+        mode = self.mode_combo.currentText().lower()
+        
+        if mode == 'drawer':
+            ready = bool(self.target_panel.file_path)
+        else:
+            ready = bool(self.base_panel.file_path and self.target_panel.file_path)
+            
         self.start_btn.setEnabled(ready)
         self.export_btn.setEnabled(ready)
-        self.reverse_btn.setEnabled(ready)
+        
+        if mode != 'drawer':
+            self.reverse_btn.setEnabled(ready)
         
         if ready:
             self.export_menu.clear()
@@ -1798,21 +2253,26 @@ class ImderGUI(QMainWindow):
             self.export_menu.addAction("GIF", lambda: self.start_process('export_gif'))
 
     def validate(self):
-        if not self.base_panel.file_path or not self.target_panel.file_path:
-            return False
-            
         mode_text = self.mode_combo.currentText()
         mode = mode_text.lower()
         
-        if mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend']:
-            has_manual = self.target_panel.manual_mask is not None
-            has_auto = self.target_panel.is_analyzing and self.target_panel.selected_segments
-            
-            if not has_manual and not has_auto:
-                 QMessageBox.warning(self, "Selection Required", f"For {mode.title()} mode, please select a shape on Target image (via Analyze or Pen tool).")
-                 return False
+        if mode == 'drawer':
+            if not self.target_panel.file_path:
+                return False
+            return True
+        else:
+            if not self.base_panel.file_path or not self.target_panel.file_path:
+                return False
                 
-        return True
+            if mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend']:
+                has_manual = self.target_panel.manual_mask is not None
+                has_auto = self.target_panel.is_analyzing and self.target_panel.selected_segments
+                
+                if not has_manual and not has_auto:
+                     QMessageBox.warning(self, "Selection Required", f"For {mode.title()} mode, please select a shape on Target image (via Analyze or Pen tool).")
+                     return False
+                    
+            return True
 
     def start_process(self, mode):
         if not self.validate():
@@ -1829,13 +2289,21 @@ class ImderGUI(QMainWindow):
         algo_text = self.mode_combo.currentText()
         algo = algo_text.lower()
         
-        if self.target_panel.manual_mask is not None:
-            mask = self.target_panel.manual_mask
-        elif algo == 'fusion':
-            segments_mask = self.target_panel.get_mask()
-            mask = segments_mask if segments_mask is not None else None
+        base_image_array = None
+        if algo == 'drawer':
+            base_image_array = self.base_panel.get_drawing_array()
+            if base_image_array is None:
+                self.status_bar.setText("No drawing found")
+                self.set_processing_state(False)
+                return
         else:
-            mask = self.target_panel.get_mask() if algo in ['pattern', 'disguise', 'navigate', 'swap', 'blend'] else None
+            if self.target_panel.manual_mask is not None:
+                mask = self.target_panel.manual_mask
+            elif algo == 'fusion':
+                segments_mask = self.target_panel.get_mask()
+                mask = segments_mask if segments_mask is not None else None
+            else:
+                mask = self.target_panel.get_mask() if algo in ['pattern', 'disguise', 'navigate', 'swap', 'blend'] else None
         
         res_text = self.res_combo.currentText()
         resolution = int(res_text.split('x')[0])
@@ -1850,10 +2318,11 @@ class ImderGUI(QMainWindow):
             algo,
             b_trans,
             t_trans,
-            mask,
+            mask if algo != 'drawer' else None,
             resolution,
             sound_option,
-            audio_quality
+            audio_quality,
+            base_image_array
         )
         self.worker.frame_signal.connect(self.update_preview)
         self.worker.progress_signal.connect(self.progress.setValue)
@@ -1882,12 +2351,17 @@ class ImderGUI(QMainWindow):
         self.set_processing_state(False)
 
     def set_processing_state(self, processing):
+        mode = self.mode_combo.currentText().lower()
+        
         self.start_btn.setEnabled(not processing)
         self.export_btn.setEnabled(not processing)
         self.base_panel.setEnabled(not processing)
         self.target_panel.setEnabled(not processing)
         self.stop_btn.setEnabled(processing)
-        self.reverse_btn.setEnabled(not processing)
+        
+        if mode != 'drawer':
+            self.reverse_btn.setEnabled(not processing)
+            
         self.mode_combo.setEnabled(not processing)
         self.res_combo.setEnabled(not processing)
         self.replay_btn.setEnabled(False)
@@ -2345,7 +2819,7 @@ def interactive_cli_mode():
                 print("\n" + "=" * 60 + "\n")
                 break
             elif choice == '2':
-                print("\nThank you for using IMDER!")
+                print("\nThank you for using IMDER! Goodbye!")
                 print("Results saved to: results/")
                 sys.exit(0)
             print("Invalid choice. Please enter 1 or 2.")
