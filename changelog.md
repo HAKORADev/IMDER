@@ -2,6 +2,16 @@
 
 All notable changes to IMDER - Image Blender will be documented in this file.
 
+## [v1.2.0] - 2026-01-31
+
+### Added
+- **Drawer Algorithm**: Brand new interactive drawing mode allowing users to create animations from hand-drawn sketches on canvas
+- **Advanced Drawing Tools**: Complete drawing toolkit with undo/redo functionality, color picker, and adjustable brush sizes
+- **Canvas Drawing Engine**: Real-time drawing canvas that can be transformed into animations with target images
+- **Interactive Drawing Interface**: Draw directly in the application and see immediate transformations
+
+*Note: All new features have been thoroughly tested and are production-ready with no major bugs reported.*
+
 ## [v1.1.2] - 2026-01-24
 
 ### Fixed
