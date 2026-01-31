@@ -82,13 +82,13 @@ While [Obamify](https://obamify.com/) takes **minutes to hours** for high-qualit
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
 | **Video Processing** | ✅ Full Support | ❌ No |
 | **Image Processing** | ✅ **10 Algorithms** | ✅ 1 Algorithm |
-| **Draw Mode** | ✅ **NEW: Sketch to Image** | ❌ No |
+| **Draw Mode** | ✅ **Sketch to Image** | ✅ Yes |
 | **Audio Generation** | ✅ Pixel + Target | ❌ No |
 | **Python Library** | ✅ `pip install imder` | ❌ No |
 | **Real-time Preview** | ✅ Yes (GUI) | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
 | **Export Formats** | PNG, MP4, GIF + Audio | GIF only |
-| **Dark Theme UI** | ✅ **Modern v1.2.0** | ❌ Outdated |
+| **Dark Theme UI** | ✅ **Modern** | ✅ Classic |
 | **Cross-Platform** | ✅ All major OS | ✅ All major OS + Web |
 
 ---
