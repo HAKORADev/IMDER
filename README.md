@@ -66,7 +66,7 @@ IMDER now works both as a **standalone GUI application** (from source) and as a 
 |---------|--------------|----------------|
 | **Interface** | PyQt5 GUI | CLI + Python API |
 | **Best for** | Interactive editing | Automation, batch processing |
-| **Algorithms** | 9 modes + Shape tools | 4 core modes |
+| **Algorithms** | 10 modes + Shape tools + **NEW: Drawer** | 4 core modes |
 | **Usage** | Point-and-click | Code integration |
 | **Dependencies** | PyQt5, OpenCV, NumPy | OpenCV, NumPy, Pillow |
 
@@ -76,18 +76,19 @@ IMDER now works both as a **standalone GUI application** (from source) and as a 
 
 While [Obamify](https://obamify.com/) takes **minutes to hours** for high-quality results, IMDER completes the same transformations in **seconds**. See for yourself at [obamify.com](https://obamify.com/) and compare the experience.
 
-| Feature | IMDER | Obamify |
+| Feature | IMDER v1.2.0 | Obamify |
 |---------|-------|---------|
 | **Processing Speed** | Seconds | Minutes to hours |
 | **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
 | **Video Processing** | ✅ Full Support | ❌ No |
-| **Image Processing** | ✅ **9 Algorithms** | ✅ 1 Algorithm |
+| **Image Processing** | ✅ **10 Algorithms** | ✅ 1 Algorithm |
+| **Draw Mode** | ✅ **NEW: Sketch to Image** | ❌ No |
 | **Audio Generation** | ✅ Pixel + Target | ❌ No |
 | **Python Library** | ✅ `pip install imder` | ❌ No |
 | **Real-time Preview** | ✅ Yes (GUI) | ✅ Yes |
 | **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
 | **Export Formats** | PNG, MP4, GIF + Audio | GIF only |
-| **Dark Theme UI** | ✅ Modern | ❌ Outdated |
+| **Dark Theme UI** | ✅ **Modern v1.2.0** | ❌ Outdated |
 | **Cross-Platform** | ✅ All major OS | ✅ All major OS + Web |
 
 ---
@@ -204,21 +205,38 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 
 ---
 
+### NEW in v1.2.0: Drawer Mode - Sketch to Reality
+
+Experience the power of the new **Drawer Mode** - create animations from your sketches!
+
+<p align="center">
+  <img src="assets/drawer_example.gif" alt="IMDER Drawer Mode" width="512"/>
+</p>
+
+<p align="center">
+  <em>Draw on canvas → Transform into image using IMDER's Drawer Mode</em>
+</p>
+
+**Draw, sketch, and watch your creations come to life** with IMDER's new interactive drawing tools.
+
+---
+
 ## Features
 
-### 🎨 **9 Powerful Processing Modes (GUI Version)**
+### 🎨 **10 Powerful Processing Modes (GUI Version)**
 
 | Mode | Description |
 |------|-------------|
 | **Shuffle** | Random pixel swapping with brightness balance |
 | **Merge** | Grayscale sorting for smooth transitions |
-| **Missform** | **NEW** Shape morphing through binary pixel interpolation |
-| **Fusion** | Artistic pixel sorting animations (now with bugfixes) |
+| **Missform** | Enhanced shape morphing through binary pixel interpolation |
+| **Fusion** | Artistic pixel sorting animations with bugfixes |
 | **Pattern** | Texture transfer based on color quantization |
 | **Disguise** | Shape-aware transformations |
 | **Navigate** | Gradient-guided pixel movement |
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
+| **Drawer** | **NEW** Transform hand-drawn sketches into images |
 
 ### 🎬 Video Processing Modes
 
@@ -226,9 +244,9 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 |------|-------------|
 | **Shuffle** | Random pixel swapping between video frames |
 | **Merge** | Grayscale sorting for smooth frame transitions |
-| **Missform** | **NEW** Shape morphing between video sequences |
+| **Missform** | Enhanced shape morphing between video sequences |
 
-*Note: Advanced modes (Fusion, Pattern, Disguise, Navigate, Swap, Blend) are available for image processing only in the GUI version. The PyPI library supports Shuffle, Merge, Missform, and Fusion for images, plus Shuffle, Merge, and Missform for videos.*
+*Note: Advanced modes (Fusion, Pattern, Disguise, Navigate, Swap, Blend, Drawer) are available for image processing only in the GUI version. The PyPI library supports Shuffle, Merge, Missform, and Fusion for images, plus Shuffle, Merge, and Missform for videos.*
 
 ### 🔊 Audio Generation Options
 
@@ -245,6 +263,7 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 - **Flip** - Horizontal mirror
 - **Shape Selection** - Auto-segmentation or manual drawing (GUI only)
 - **Multi-segment Selection** - Select multiple distinct regions (GUI only)
+- **Drawer Tools** - **NEW** Canvas drawing with undo/redo, color picker, adjustable brushes
 
 ### 📊 Resolution Options
 
@@ -269,6 +288,7 @@ Unlike Obamify, IMDER allows you to:
 - Manually draw custom masks with the Pen tool
 - Combine multiple segments for precise control
 - Exclude specific areas from processing
+- **NEW** Create animations from hand-drawn sketches
 
 ---
 
@@ -354,14 +374,16 @@ See **[pip-imder.md](pip-imder.md)** for complete library documentation.
 ### GUI Mode (Source Version)
 
 1. Launch: `python src/imder.py`
-2. Select processing mode from the dropdown (now with 9 options including **Missform**)
+2. Select processing mode from the dropdown (now with 10 options including **Drawer**)
 3. Choose resolution (start with 256×256 for speed)
-4. Click "Add Media" on both panels to load images
-5. Optionally, use Rotate/Flip to adjust images
-6. For advanced modes, use "Analyze Shapes" or draw custom masks
-7. Enable audio options if desired
-8. Click "Start Processing" to preview the animation
-9. Export as PNG, MP4, GIF, or with synchronized audio
+4. For **Drawer Mode**: Draw on canvas, then add target image
+5. For other modes: Click "Add Media" on both panels to load images
+6. Optionally, use Rotate/Flip to adjust images
+7. For advanced modes, use "Analyze Shapes" or draw custom masks
+8. Enable audio options if desired
+9. Click "Start Processing" to preview the animation
+10. Export as PNG, MP4, GIF, or with synchronized audio
+
 
 ### CLI Mode (Source Version)
 
@@ -403,7 +425,8 @@ Compare the experience yourself:
 - **FFmpeg Integration** - Professional-grade video handling
 - **Morton Code Ordering** - Efficient spatial pixel mapping
 - **K-Means Clustering** - Intelligent shape detection
-- **Binary Morphing** - New shape transition algorithm
+- **Binary Morphing** - Enhanced shape transition algorithm
+- **Canvas Drawing Engine** - New interactive drawing tools
 - **QThread Processing** - Non-blocking UI during operations (GUI)
 - **Frame-Accurate Video Processing** - Pixel-perfect video transformations
 
@@ -455,3 +478,5 @@ Your contributions make IMDER better for everyone.
 Inspired by pixel manipulation techniques, with special thanks to the open-source computer vision community.
 
 **Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [Releases](https://github.com/HAKORADev/IMDER/releases) | **PyPI:** `pip install imder`
+
+---
