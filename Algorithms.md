@@ -22,13 +22,88 @@
 
 ## Introduction
 
-IMDER features **10 distinct image processing algorithms** (increased from 9), each designed for specific visual effects and use cases. Unlike tools that offer only one transformation method, IMDER gives you a toolkit of approaches, each with unique characteristics. This document explains how each algorithm works, when to use it, and what makes it special.
+IMDER features **10 distinct image processing algorithms**, each designed for specific visual effects and use cases. Unlike tools that offer only one transformation method, IMDER gives you a toolkit of approaches, each with unique characteristics. This document explains how each algorithm works, when to use it, and what makes it special.
 
 **Key Concepts:**
 - **Pixel Assignment**: How pixels from the base image map to positions in the target image
 - **Temporal Interpolation**: How pixels move over the 300-frame animation
 - **Mask Dependence**: Whether the algorithm requires shape selection
 - **Visual Style**: The aesthetic result of each transformation
+
+## Resolution and Scaling Architecture
+
+### Boxed Resolutions (Width = Height)
+
+IMDER processes images using **boxed (square) resolutions** exclusively. While the input images can be any aspect ratio, internally all processing happens within a square canvas. This design choice is not arbitrary—it is fundamentally algorithmically superior for pixel manipulation:
+
+**Why Square Resolutions?**
+
+1. **Simplified Pixel Mapping**: Square grids allow for straightforward 1D array indexing where every row has identical length. This eliminates boundary checking complexity when converting between 2D coordinates (x, y) and 1D array indices.
+
+2. **Morton Code Optimization**: Algorithms like Navigate rely on Morton codes (Z-order curves) for spatial sorting. These space-filling curves work most efficiently on power-of-2 square grids, ensuring optimal locality of reference.
+
+3. **Symmetric Distance Calculations**: In square processing, distance metrics (used in Blend and Missform algorithms) maintain consistent scaling across both axes. Rectangular processing would require asymmetrical scaling factors which introduce distortion in pixel movement paths.
+
+4. **Uniform Sampling**: When assigning pixels from source to target, square resolutions ensure that the sampling density is identical across the entire image space, preventing the "stretched" or "compressed" artifacts common in non-uniform scaling scenarios.
+
+**Available Resolutions:**
+- Standard presets: 128×128, 256×256, 512×512, 768×768, 1024×1024, 2048×2048
+- Custom range: 1×1 up to 16384×16384 (configurable via GUI custom dialog)
+
+**Performance Scaling:**
+- Lower resolutions (128-512): Faster processing, suitable for previews and draft work
+- Medium resolutions (1024-2048): Optimal quality-to-speed ratio for most use cases
+- High resolutions (4096+): Maximum quality for professional output, longer processing times
+
+### Smart Scaling Engine (Upscaling & Downscaling)
+
+IMDER v1.2.5 introduces **bidirectional scaling**—both upscaling and downscaling are now applied dynamically based on the relationship between source image dimensions and target resolution.
+
+**How It Works:**
+
+The scaling process follows a two-stage pipeline:
+
+1. **Upscale Stage (if needed)**: If the smaller dimension of the source image is less than the targeted resolution, the image is first upscaled using nearest-neighbor interpolation to ensure sufficient pixel density.
+
+   *Calculation*: `upscale_factor = ceil(target_resolution / min(image_width, image_height))`
+
+   If factor ≥ 2, image dimensions are multiplied by this factor using `cv2.resize()` with `INTER_NEAREST` interpolation.
+
+2. **Square Crop/Resize Stage**: The image (now potentially upscaled) is then resized to the exact target square resolution using standard bilinear interpolation.
+
+**Example Scenario:**
+
+If your target processing resolution is **1024×1024**, and you load two images that are **1280×720** (720p HD):
+
+1. **Upscale Phase**: The minimum dimension is 720. Target is 1024.
+   - `factor = ceil(1024 / 720) = ceil(1.42) = 2`
+   - Both images are upscaled 2× to **2560×1440** using nearest-neighbor
+   - This preserves sharp edges and prevents the "softening" that bicubic/bilinear upscaling would introduce
+
+2. **Downscale Phase**: The 2560×1440 images are then resized to **1024×1024**
+   - This hybrid approach ensures no single pixel in the final resolution represents an area larger than the original pixel, maintaining maximum detail integrity
+
+**Why Nearest-Neighbor for Upscaling?**
+
+- **Pixel Integrity**: Nearest-neighbor creates exact duplicates of original pixels rather than blended averages. This is crucial for algorithms that rely on discrete color values (like Shuffle and Pattern).
+- **Speed**: Fastest interpolation method, minimizing preprocessing overhead.
+- **Reversibility**: The relationship between original and upscaled pixels is deterministic (1→4, 1→9, etc.), making debugging and pixel tracing straightforward.
+
+**Algorithmic Impact:**
+
+- **Shuffle/Merge**: Benefit from increased pixel count for smoother brightness transitions
+- **Missform**: Upscaling ensures binary masks have sufficient resolution to capture fine shape details
+- **Drawer**: Canvas maintains 1024×1024 internal resolution regardless of display scaling
+- **Pattern**: Higher effective resolution allows for more granular texture matching
+
+**Memory Considerations:**
+
+At 16384×16384 resolution with 3-channel RGB:
+- Raw image size: ~768 MB per image
+- Working buffers: 2-3× that amount during processing
+- **Recommendation**: Ensure system has at least 16GB RAM for maximum resolution work
+
+---
 
 ## Image Processing Algorithms
 
@@ -534,6 +609,9 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 ## Troubleshooting Guide
 
 ### Common Issues and Solutions
+**Cannot pause replay animation:**
+The replay function (both normal and reverse) plays back cached frames from the last processing operation. These replays are fixed at 10 seconds duration and cannot be paused or scrubbed. This is by design—the replay serves as a quick review of the completed transformation, not as a video player. If you need to examine a specific frame, export the animation as MP4 or GIF where you can use standard media players with timeline control. Additionally, starting a new processing job while a replay is running will cause conflicts in the preview panel—always wait for the replay to complete or click "Stop" before initiating new processing.
+
 
 **Algorithm produces poor results:**
 - Try different algorithm - each works better with certain image types
