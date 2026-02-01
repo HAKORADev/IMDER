@@ -147,7 +147,7 @@ IMDER algorithms create fluid transitions between images at any resolution:
 Transform hand-drawn sketches into photorealistic images:
 
 <p align="center">
-  <img src="assets/drawer_example.gif" alt="IMDER Drawer Mode" width="512"/>
+  <img src="assets/drawer_example.gif" alt="IMDER Drawer Mode" width="128"/>
 </p>
 
 <p align="center">
