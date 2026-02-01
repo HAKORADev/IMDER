@@ -10,7 +10,7 @@
 [![GitHub release](https://img.shields.io/github/release/HAKORADev/IMDER.svg)](https://github.com/HAKORADev/IMDER/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-📦 **Latest Release: v1.2.5** (February 2026) — Featuring custom resolutions up to 16384×16384, configurable FPS (30-240), and smart upscaling support.
+📦 **Latest Release: v1.2.5** (February 2026) — Featuring custom resolutions up to 16384×16384, configurable FPS (30-240), and smart scaling support.
 
 **Important Notes:**
 - 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows (v1.1.1) and macOS/Linux (v1.0.0), but building from source ensures you always have the newest features and fixes.
