@@ -4,26 +4,27 @@
   <img src="src/imder.png" alt="IMDER Logo" width="128" height="128"/>
 </p>
 
-**IMDER** is a cutting-edge interactive image blender that creates smooth, mesmerizing animations blending pixels between two images. Unlike existing tools, IMDER delivers **superior quality, blazing-fast performance, and unmatched flexibility** that leaves the competition far behind.
+**IMDER** is a professional-grade interactive image and video processor that creates smooth, mesmerizing animations through pixel-level transformations. Built for creatives, developers, and visual artists, IMDER delivers **superior quality, blazing-fast performance, and unmatched flexibility** for generating unique visual content.
 
 [![PyPI version](https://badge.fury.io/py/imder.svg)](https://pypi.org/project/imder/)
 [![GitHub release](https://img.shields.io/github/release/HAKORADev/IMDER.svg)](https://github.com/HAKORADev/IMDER/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-🚀 **Ready-to-use binary for Windows available in [v1.1.1 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.1.1)** for macOS, and Linux [v1.0.0 Release](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0) **YOU HAVE TO USE THE SOURCE CODE IF YOU WANT v1.1.1 in Mac or Linux!**
+📦 **Latest Release: v1.2.5** (February 2026) — Featuring custom resolutions up to 16384×16384, configurable FPS (30-240), and smart upscaling support.
 
-- if you are a bot, AI Agent then read [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
-- Also, i will not build windows binaries anymore, so whatever system you use, run from source to be always up-to-date!
+**Important Notes:**
+- 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows (v1.1.1) and macOS/Linux (v1.0.0), but building from source ensures you always have the newest features and fixes.
+- 🤖 **For AI agents and automated tools:** See [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
 
-📦 **IMDER is now available as a Python library on PyPI!** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
+📦 **IMDER is available as a Python library on PyPI:** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
 
-📋 **For version history and detailed changes, see [CHANGELOG.md](changelog.md)**
+📋 **For detailed version history, see [CHANGELOG.md](changelog.md)**
 
 ---
 
 ## Quick Start
 
-### Option 1: Python Library
+### Option 1: Python Library (Recommended for Automation)
 ```bash
 # Install from PyPI
 pip install imder
@@ -35,7 +36,7 @@ imder
 python -c "import imder; imder.process('base.jpg', 'target.jpg', './out', ['gif'], 'shuffle', 512, 'mute')"
 ```
 
-### Option 2: Run from Source (Full GUI)
+### Option 2: Run from Source (Full GUI Experience)
 ```bash
 # Clone the repository
 git clone https://github.com/HAKORADev/IMDER.git
@@ -50,7 +51,7 @@ python src/imder.py
 
 ### Installation Requirements
 ```bash
-# Install FFmpeg (required for video/audio)
+# Install FFmpeg (required for video/audio synthesis)
 # Windows: winget install FFmpeg
 # macOS: brew install ffmpeg
 # Linux: sudo apt install ffmpeg
@@ -60,7 +61,7 @@ python src/imder.py
 
 ## Two Ways to Use IMDER
 
-IMDER now works both as a **standalone GUI application** (from source) and as a **Python package** (from PyPI):
+IMDER operates as both a **standalone GUI application** (source) and a **Python package** (PyPI):
 
 | Feature | GUI (Source) | Library (PyPI) |
 |---------|--------------|----------------|
@@ -72,221 +73,93 @@ IMDER now works both as a **standalone GUI application** (from source) and as a 
 
 ---
 
-## Why IMDER Outperforms the Competition
+## Core Capabilities
 
-While [Obamify](https://obamify.com/) takes **minutes to hours** for high-quality results, IMDER completes the same transformations in **seconds**. See for yourself at [obamify.com](https://obamify.com/) and compare the experience.
+### 🎨 **10 Processing Algorithms**
 
-| Feature | IMDER v1.2.5 | Obamify |
-|---------|-------|---------|
-| **Processing Speed** | Seconds | Minutes to hours |
-| **Maximum Resolution** | Up to 16384×16384 (Custom) | Limited, slow at high res |
-| **Video Processing** | ✅ Full Support (30-240 FPS) | ❌ No |
-| **Image Processing** | ✅ **10 Algorithms** | ✅ 1 Algorithm |
-| **Draw Mode** | ✅ **Sketch to Image** | ✅ Yes |
-| **Audio Generation** | ✅ Pixel + Target | ❌ No |
-| **Python Library** | ✅ `pip install imder` | ❌ No |
-| **Real-time Preview** | ✅ Yes (GUI) | ✅ Yes |
-| **Shape Selection** | ✅ Yes (auto + manual) | ❌ No |
-| **Export Formats** | PNG, MP4, GIF + Audio | GIF only |
-| **Dark Theme UI** | ✅ **Modern** | ✅ Classic |
-| **Cross-Platform** | ✅ All major OS | ✅ All major OS + Web |
+IMDER offers 10 distinct pixel manipulation algorithms, each designed for specific visual effects:
 
----
+| Mode | Description | Mask Required | Video Support |
+|------|-------------|---------------|---------------|
+| **Shuffle** | Random pixel swapping with brightness balance | No | ✅ Yes |
+| **Merge** | Grayscale sorting for smooth transitions | No | ✅ Yes |
+| **Missform** | Binary mask morphing for shape transformations | No | ✅ Yes |
+| **Fusion** | Selective transformation with color blending | Optional | ❌ No |
+| **Pattern** | Texture transfer via color quantization | Yes | ❌ No |
+| **Disguise** | Brightness-matched pixel rearrangement | Yes | ❌ No |
+| **Navigate** | Morton curve-guided pixel movement | Yes | ❌ No |
+| **Swap** | Bidirectional pixel exchange | Yes | ❌ No |
+| **Blend** | Physics-inspired fluid dynamics | Yes | ❌ No |
+| **Drawer** | Canvas-based sketch to image transformation | N/A | ❌ No |
 
-## Python Library Usage (PyPI)
+### 🎬 **Video Processing**
 
-Perfect for automation, server-side processing, or integrating into existing workflows:
+Full video-to-video and video-to-image processing capabilities:
+- Frame-accurate pixel manipulation
+- Support for MP4, AVI, MOV, MKV formats
+- Audio generation and extraction (pixel synthesis or target track)
+- Configurable FPS output: 30, 60, 90, 120, or 240 FPS
+- Crossfade transitions between frames
 
-```python
-import imder
+### 🖼️ **Advanced Image Features**
 
-# Simple image blending
-imder.process(
-    base="input1.jpg",
-    target="input2.jpg",
-    result="./output",
-    results=["png", "gif", "mp4"],  # Export all three formats
-    algo="shuffle",
-    res=512,
-    sound="mute"
-)
+- **Resolution Flexibility**: Standard presets (128×128 to 2048×2048) plus custom resolutions up to **16384×16384**
+- **Smart Scaling**: Automatic upscaling using nearest-neighbor interpolation before processing, ensuring no quality loss from downscaling-only workflows
+- **Shape Selection**: Automatic k-means segmentation or manual pen-tool masking
+- **Transform Operations**: 90° rotation increments and horizontal flip
+- **Multi-segment Support**: Combine multiple selections for complex transformations
 
-# With target audio extraction (if target is video)
-imder.process(
-    base="base.jpg",
-    target="video.mp4",
-    result="./output",
-    results=["mp4"],
-    algo="missform",
-    res=1024,
-    sound="target",  # Extract audio from target
-    sq=5             # Sound quality (1-10)
-)
+### 🎵 **Audio Integration**
 
-# Launch interactive CLI mode
-imder.launch_interactive()
-```
+| Option | Description |
+|--------|-------------|
+| **Mute** | No audio (default) |
+| **Pixel Sound** | Synthesize audio from frame pixel data |
+| **Target Audio** | Extract and preserve audio from source video |
+| **Quality Levels** | 10%-100% bitrate preservation for target audio |
 
-**Command line usage after `pip install`:**
-```bash
-# Interactive mode
-imder
+### 💾 **Export Formats**
 
-# Direct processing
-imder base.jpg target.jpg ./output --results gif mp4 --algo missform --res 1024
-
-# Video with audio extraction
-imder video1.mp4 video2.mp4 ./out --results mp4 --sound target --sq 8
-```
-
-For full library documentation, see **[pip-imder.md](pip-imder.md)**.
+- **PNG**: Static final frame
+- **MP4**: H.264 encoded video with configurable FPS
+- **GIF**: Animated with optimized duration
+- **Synchronized Audio**: MP4 with embedded audio tracks
 
 ---
 
-## Live Comparison Showcase
+## Showcase
 
-All GIFs below are rendered at **128×128 resolution** to provide a fair comparison with Obamify's limitations. IMDER users can enjoy the same transformations at **up to 16384×16384 resolution** with the same lightning-fast performance.
+### Smooth Transformations
 
-### Obama Transformation Battle
-
-**Input Images:**
+IMDER algorithms create fluid transitions between images at any resolution:
 
 <p align="center">
-  <img src="assets/flower.png" alt="Flower" width="200"/>
-  <img src="assets/obama.png" alt="Obama" width="200"/>
-</p>
-
-#### Obamify Result (from obamify.com):
-<p align="center">
-  <img src="assets/obamify_obama-to-flower.gif" alt="Obamify Obama to Flower" width="256"/>
-</p>
-
-#### IMDER Result (Navigate Algorithm):
-<p align="center">
-  <img src="assets/imder_obama-to-flower_navigate.gif" alt="IMDER Obama to Flower" width="256"/>
-</p>
-
-**The difference is clear:** IMDER's algorithm produces smoother transitions, better color preservation, and more visually appealing results—all while processing in a fraction of the time.
-
----
-
-### Reverse Transformation
-
-<p align="center">
-  <img src="assets/obamify_flower-to-obama.gif" alt="Obamify Flower to Obama" width="256"/>
-  <img src="assets/imder_flower-to-obama_disguise.gif" alt="IMDER Flower to Obama" width="256"/>
+  <img src="assets/imder_book-to-girl_merge.gif" alt="Book to Girl Merge" width="256"/>
+  <img src="assets/imder_girl-to-book_merge.gif" alt="Girl to Book Merge" width="256"/>
 </p>
 
 <p align="center">
-  <em>Left: Obamify | Right: IMDER (Disguise Algorithm)</em>
+  <em>Book ↔ Girl transformation using Merge Algorithm</em>
 </p>
 
----
+### Drawer Mode: Sketch to Reality
 
-### Advanced Merging Capabilities
-
-IMDER goes far beyond simple Obama transformations. Experience the power of our **Merge Algorithm** with completely different image types:
-
-<p align="center">
-  <img src="assets/book.jpg" alt="Book" width="200"/>
-  <img src="assets/girl.jpg" alt="Girl" width="200"/>
-</p>
-
-<p align="center">
-  <img src="assets/imder_book-to-girl_merge.gif" alt="IMDER Book to Girl" width="256"/>
-  <img src="assets/imder_girl-to-book_merge.gif" alt="IMDER Girl to Book" width="256"/>
-</p>
-
-<p align="center">
-  <em>Book → Girl (left) | Girl → Book (right) using IMDER Merge Algorithm</em>
-</p>
-
-**Obamify cannot perform these transformations.** IMDER's advanced algorithms work with **any image pair**, not just Obama.
-
----
-
-### Drawer Mode - Sketch to Reality
-
-Experience the power of **Drawer Mode** - create animations from your sketches!
+Transform hand-drawn sketches into photorealistic images:
 
 <p align="center">
   <img src="assets/drawer_example.gif" alt="IMDER Drawer Mode" width="512"/>
 </p>
 
 <p align="center">
-  <em>Draw on canvas → Transform into image using IMDER's Drawer Mode</em>
+  <em>Draw on canvas → Transform into target image</em>
 </p>
 
-**Draw, sketch, and watch your creations come to life** with IMDER's interactive drawing tools.
-
----
-
-## Features
-
-### 🎨 **10 Powerful Processing Modes (GUI Version)**
-
-| Mode | Description |
-|------|-------------|
-| **Shuffle** | Random pixel swapping with brightness balance |
-| **Merge** | Grayscale sorting for smooth transitions |
-| **Missform** | Enhanced shape morphing through binary pixel interpolation |
-| **Fusion** | Artistic pixel sorting animations with bugfixes |
-| **Pattern** | Texture transfer based on color quantization |
-| **Disguise** | Shape-aware transformations |
-| **Navigate** | Gradient-guided pixel movement |
-| **Swap** | Bidirectional pixel exchange |
-| **Blend** | Physics-inspired animated transitions |
-| **Drawer** | Transform hand-drawn sketches into images |
-
-### 🎬 Video Processing Modes
-
-| Mode | Description |
-|------|-------------|
-| **Shuffle** | Random pixel swapping between video frames |
-| **Merge** | Grayscale sorting for smooth frame transitions |
-| **Missform** | Enhanced shape morphing between video sequences |
-
-*Note: Advanced modes (Fusion, Pattern, Disguise, Navigate, Swap, Blend, Drawer) are available for image processing only in the GUI version. The PyPI library supports Shuffle, Merge, Missform, and Fusion for images, plus Shuffle, Merge, and Missform for videos.*
-
-### 🔊 Audio Generation Options
-
-| Option | Description |
-|--------|-------------|
-| **Mute** | No audio (default) |
-| **Sound** | Synthesize audio from pixel colors |
-| **Target-Sound** | Extract and use audio from target video |
-| **Quality Levels** | 10%-100% for target audio preservation |
-
-### 🖼️ Image Manipulation Tools
-
-- **Rotate** - 90° increments (0°, 90°, 180°, 270°)
-- **Flip** - Horizontal mirror
-- **Shape Selection** - Auto-segmentation or manual drawing (GUI only)
-- **Multi-segment Selection** - Select multiple distinct regions (GUI only)
-- **Drawer Tools** - Canvas drawing with undo/redo, color picker, adjustable brushes
-
-### 📊 Resolution & Quality Options
-
-- **Standard Resolutions:** 128×128 (fastest) to 2048×2048 (maximum quality)
-- **Custom Resolution:** Configure any resolution up to **16384×16384**
-- **Smart Scaling:** Automatic upscaling or downscaling to match targeted resolution
-- **FPS Configuration:** Export videos at 30, 60, 90, 120, or 240 FPS
-
-### 💾 Export Formats
-
-- **Frame (PNG)** - Static blended image
-- **Animation (MP4)** - Full resolution video (30-240fps)
-- **GIF** - Animated with customizable duration
-- **Video with Audio** - MP4 with synthesized or target audio
-
-### 🎯 Advanced Shape Analysis (GUI Only)
-
-Unlike Obamify, IMDER allows you to:
-- Automatically detect and select distinct regions using k-means clustering
-- Manually draw custom masks with the Pen tool
-- Combine multiple segments for precise control
-- Exclude specific areas from processing
-- Create animations from hand-drawn sketches
+**Features:**
+- 1024×1024 drawing canvas with adjustable brush sizes (1-50px)
+- Undo/redo history (50 states)
+- Color picker with full RGB support
+- Base image overlay support (trace existing images)
+- Intelligent pixel distribution algorithm
 
 ---
 
@@ -294,17 +167,17 @@ Unlike Obamify, IMDER allows you to:
 
 ### Prerequisites
 - Python 3.8+
-- pip
-- [FFmpeg](https://github.com/FFmpeg/FFmpeg) (REQUIRED for video processing with audio - must be installed and added to system PATH)
+- pip package manager
+- [FFmpeg](https://ffmpeg.org/) (REQUIRED for video/audio processing)
 
-### Method 1: Install from PyPI (Recommended for CLI/Automation)
+### Method 1: PyPI Installation (CLI/Library)
 ```bash
 pip install imder
 ```
 
-This gives you the `imder` command anywhere and allows `import imder` in your scripts.
+Provides the `imder` command globally and enables `import imder` in Python scripts.
 
-### Method 2: Run from Source (For Full GUI)
+### Method 2: Source Installation (Full GUI)
 ```bash
 git clone https://github.com/HAKORADev/IMDER.git
 cd IMDER
@@ -312,21 +185,21 @@ pip install -r requirements.txt
 python src/imder.py
 ```
 
-**Required packages for source:**
-- `PyQt5` - Modern GUI framework
-- `opencv-python` - Advanced image processing
-- `numpy` - High-performance numerical operations
-- `Pillow` - Image handling
+**Dependencies:**
+- `PyQt5` — GUI framework
+- `opencv-python` — Image/video processing
+- `numpy` — Numerical operations
+- `Pillow` — Image format handling
 
-### Install FFmpeg (Required for Video Audio)
+### FFmpeg Setup
 ```bash
-# Windows (winget)
+# Windows
 winget install FFmpeg
 
-# macOS (brew)
+# macOS
 brew install ffmpeg
 
-# Linux (apt)
+# Linux (Debian/Ubuntu)
 sudo apt install ffmpeg
 ```
 
@@ -334,19 +207,19 @@ sudo apt install ffmpeg
 
 ## Usage Guide
 
-### Python Library (PyPI Version)
+### Python Library
 
-**Interactive CLI:**
+**Interactive Mode:**
 ```bash
 imder
 ```
 
-**Direct CLI Processing:**
+**Direct Processing:**
 ```bash
-# Image blending
-imder base.png target.png ./output --results gif mp4 --algo shuffle --res 512
+# Image processing with specific algorithm
+imder base.jpg target.jpg ./output --results gif mp4 --algo merge --res 1024
 
-# Video processing with sound extraction
+# Video processing with audio extraction
 imder video1.mp4 video2.mp4 ./output --results mp4 --sound target --sq 8
 ```
 
@@ -354,129 +227,126 @@ imder video1.mp4 video2.mp4 ./output --results mp4 --sound target --sq 8
 ```python
 import imder
 
-# Batch process multiple images
-for i in range(10):
+# Single transformation
+imder.process(
+    base="input.jpg",
+    target="output.jpg",
+    result="./renders",
+    results=["png", "mp4", "gif"],
+    algo="missform",
+    res=2048,
+    sound="mute"
+)
+
+# Batch processing
+for i in range(100):
     imder.process(
-        base=f"frame_{i}.jpg",
+        base=f"frame_{i:03d}.png",
         target="target.jpg",
-        result=f"./output_batch",
+        result="./batch_output",
         results=["png"],
-        algo="missform",
-        res=1024,
+        algo="shuffle",
+        res=512,
         sound="mute"
     )
 ```
 
-See **[pip-imder.md](pip-imder.md)** for complete library documentation.
+See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 
-### GUI Mode (Source Version)
+### GUI Mode
 
 1. Launch: `python src/imder.py`
-2. Select processing mode from the dropdown (10 options including Drawer)
-3. Choose resolution (standard presets or Custom up to 16384×16384)
-4. Select FPS (30-240) for video exports
-5. For **Drawer Mode**: Draw on canvas, then add target image
-6. For other modes: Click "Add" on both panels to load images
-7. Optionally, use Rotate/Flip to adjust images
-8. For advanced modes, use "Analyze Shapes" or draw custom masks
-9. Enable audio options if desired
-10. Click "Start Processing" to preview the animation
-11. Export as PNG, MP4, GIF, or with synchronized audio
+2. Select algorithm from dropdown (10 available modes)
+3. Choose resolution:
+   - Standard presets: 128×128 to 2048×2048
+   - Custom: Click "Custom" to enter any value up to 16384×16384
+4. Set FPS for video exports (30/60/90/120/240)
+5. Load base and target media (images or videos)
+6. Apply transforms (rotate/flip) if needed
+7. For mask-dependent algorithms, use "Analyze Shapes" or Pen tool
+8. Configure audio options for video exports
+9. Click "Start Processing" for real-time preview
+10. Export final results (PNG/MP4/GIF)
 
-### CLI Mode (Source Version)
+**Drawer Mode Workflow:**
+1. Select "Drawer" from mode dropdown
+2. Draw on canvas using mouse/tablet
+3. Load target image in right panel
+4. Process to see drawing transform into target
 
-**Interactive (Guided):**
-1. Run: `python src/imder.py cli` or `CLI.bat` (Windows)
-2. Follow the prompts to select media files
-3. Choose algorithm, resolution, and audio options
-4. Watch real-time progress as processing completes
+### CLI Mode (Source)
 
-**Direct (One-liner):**
+**Interactive:**
 ```bash
-# Image to Image with Missform
-python src/imder.py flower.png obama.png missform 512
-
-# Video to Video with Missform
-python src/imder.py video1.mp4 video2.mp4 missform 256
-
-# Image to Video with target audio
-python src/imder.py image.jpg video.mp4 merge 512 target-sound 7
-
-# Video to Image with pixel sound
-python src/imder.py video.mp4 image.png shuffle 256 sound
+python src/imder.py cli
 ```
 
-### Try It Yourself
-
-Compare the experience yourself:
-1. Visit [obamify.com](https://obamify.com/) - note the processing time and limitations
-2. Install IMDER: `pip install imder` or download from our [releases page](https://github.com/HAKORADev/IMDER/releases)
-3. Experience the difference in speed, quality, and flexibility
+**Direct Arguments:**
+```bash
+python src/imder.py base.jpg target.jpg missform 1024
+python src/imder.py video1.mp4 video2.mp4 merge 512 target-sound 7
+```
 
 ---
 
 ## Technical Highlights
 
-- **Pure Python** - Easy to read, modify, and contribute to
-- **PyQt5 GUI** - Modern, responsive interface with dark theme (Source only)
-- **OpenCV & NumPy** - Industry-standard image processing
-- **FFmpeg Integration** - Professional-grade video handling
-- **Morton Code Ordering** - Efficient spatial pixel mapping
-- **K-Means Clustering** - Intelligent shape detection
-- **Binary Morphing** - Enhanced shape transition algorithm
-- **Canvas Drawing Engine** - Interactive drawing tools
-- **QThread Processing** - Non-blocking UI during operations (GUI)
-- **Frame-Accurate Video Processing** - Pixel-perfect video transformations
-- **Dynamic Scaling** - Intelligent resolution matching
+- **Square Resolution Processing**: Algorithmically optimized 1:1 aspect ratio processing for consistent pixel mapping and Morton code operations
+- **Bidirectional Scaling**: Nearest-neighbor upscaling ensures pixel integrity when source images are smaller than target resolution
+- **Morton Code Ordering**: Z-order curve spatial indexing for organic pixel movement paths (Navigate algorithm)
+- **K-Means Segmentation**: Intelligent automatic shape detection for mask generation
+- **QThread Architecture**: Non-blocking GUI during heavy processing operations
+- **FFmpeg Integration**: Professional-grade video encoding and audio handling
+- **Frame-Accurate Processing**: Frame-by-frame video manipulation with temporal consistency
 
----
+### Performance Characteristics
 
-## Performance Benchmark
+| Resolution | Approximate Time | Use Case |
+|------------|------------------|----------|
+| 128×128 | ~2 seconds | Preview, testing |
+| 512×512 | ~8 seconds | Web content, drafts |
+| 1024×1024 | ~20 seconds | Standard output |
+| 2048×2048 | ~45 seconds | High quality |
+| 16384×16384 | Minutes | Maximum quality |
 
-| Image Size | IMDER Time | Obamify Time |
-|------------|------------|--------------|
-| 128×128 | ~2 seconds | ~30 seconds |
-| 512×512 | ~8 seconds | Several minutes |
-| 2048×2048 | ~45 seconds | **Hours or crashes** |
-| 16384×16384 | Minutes | **Impossible** |
-
-*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Video processing time depends on frame count, resolution, and FPS.*
+*Timings vary based on hardware (CPU-bound processing) and selected algorithm.*
 
 ---
 
 ## Documentation
 
-- **[pip-imder.md](pip-imder.md)** - Full documentation for the Python library (PyPI version)
-- **[Algorithms.md](Algorithms.md)** - Detailed explanation of processing algorithms (Source version)
-- **[Bots.md](Bots.md)** - Information for AI agents and automated tools
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
-
----
-
-## License
-
-MIT License - See [LICENSE](LICENSE) for details.
+- **[Algorithms.md](Algorithms.md)** — Detailed algorithm explanations, technical implementation, and creative techniques
+- **[pip-imder.md](pip-imder.md)** — Python library API reference
+- **[CHANGELOG.md](CHANGELOG.md)** — Version history and release notes
+- **[Bots.md](Bots.md)** — Guidelines for AI agents and automated systems
 
 ---
 
 ## Contributing
 
-IMDER is open-source and welcomes contributions! Whether you want to:
-- Add new processing algorithms
-- Implement new video effects
-- Improve the UI
-- Fix bugs
-- Add documentation
-- Report issues
+IMDER is open-source (MIT License) and welcomes contributions:
 
-Your contributions make IMDER better for everyone.
+- New algorithms and processing modes
+- Video processing enhancements
+- UI/UX improvements
+- Performance optimizations
+- Documentation and translations
+- Bug reports and feature requests
+
+Please submit pull requests or issues via GitHub.
+
+---
+
+## License
+
+MIT License — See [LICENSE](LICENSE) for full details.
 
 ---
 
 ## Acknowledgments
 
-Inspired by pixel manipulation techniques, with special thanks to the open-source computer vision community.
+Built with appreciation for the open-source computer vision community and pixel manipulation techniques developed by digital artists worldwide.
 
-**Compare yourself:** [obamify.com](https://obamify.com/) | **Download IMDER:** [Releases](https://github.com/HAKORADev/IMDER/releases) | **PyPI:** `pip install imder`
+**Resources:** [GitHub Releases](https://github.com/HAKORADev/IMDER/releases) | [PyPI Package](https://pypi.org/project/imder/) | [Issue Tracker](https://github.com/HAKORADev/IMDER/issues)
 
 ---
