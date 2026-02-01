@@ -15,7 +15,7 @@
 - if you are a bot, AI Agent then read [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
 - Also, i will not build windows binaries anymore, so whatever system you use, run from source to be always up-to-date!
 
-📦 **NEW: IMDER is now available as a Python library on PyPI!** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
+📦 **IMDER is now available as a Python library on PyPI!** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
 
 📋 **For version history and detailed changes, see [CHANGELOG.md](changelog.md)**
 
@@ -23,7 +23,7 @@
 
 ## Quick Start
 
-### Option 1: Python Library (New!) - Easiest
+### Option 1: Python Library
 ```bash
 # Install from PyPI
 pip install imder
@@ -66,7 +66,7 @@ IMDER now works both as a **standalone GUI application** (from source) and as a 
 |---------|--------------|----------------|
 | **Interface** | PyQt5 GUI | CLI + Python API |
 | **Best for** | Interactive editing | Automation, batch processing |
-| **Algorithms** | 10 modes + Shape tools + **NEW: Drawer** | 4 core modes |
+| **Algorithms** | 10 modes + Shape tools + Drawer | 4 core modes |
 | **Usage** | Point-and-click | Code integration |
 | **Dependencies** | PyQt5, OpenCV, NumPy | OpenCV, NumPy, Pillow |
 
@@ -76,11 +76,11 @@ IMDER now works both as a **standalone GUI application** (from source) and as a 
 
 While [Obamify](https://obamify.com/) takes **minutes to hours** for high-quality results, IMDER completes the same transformations in **seconds**. See for yourself at [obamify.com](https://obamify.com/) and compare the experience.
 
-| Feature | IMDER v1.2.0 | Obamify |
+| Feature | IMDER v1.2.5 | Obamify |
 |---------|-------|---------|
 | **Processing Speed** | Seconds | Minutes to hours |
-| **Maximum Resolution** | 2048×2048 | Limited, slow at high res |
-| **Video Processing** | ✅ Full Support | ❌ No |
+| **Maximum Resolution** | Up to 16384×16384 (Custom) | Limited, slow at high res |
+| **Video Processing** | ✅ Full Support (30-240 FPS) | ❌ No |
 | **Image Processing** | ✅ **10 Algorithms** | ✅ 1 Algorithm |
 | **Draw Mode** | ✅ **Sketch to Image** | ✅ Yes |
 | **Audio Generation** | ✅ Pixel + Target | ❌ No |
@@ -145,7 +145,7 @@ For full library documentation, see **[pip-imder.md](pip-imder.md)**.
 
 ## Live Comparison Showcase
 
-All GIFs below are rendered at **128×128 resolution** to provide a fair comparison with Obamify's limitations. IMDER users can enjoy the same transformations at **up to 2048×2048 resolution** with the same lightning-fast performance.
+All GIFs below are rendered at **128×128 resolution** to provide a fair comparison with Obamify's limitations. IMDER users can enjoy the same transformations at **up to 16384×16384 resolution** with the same lightning-fast performance.
 
 ### Obama Transformation Battle
 
@@ -205,9 +205,9 @@ IMDER goes far beyond simple Obama transformations. Experience the power of our 
 
 ---
 
-### NEW in v1.2.0: Drawer Mode - Sketch to Reality
+### Drawer Mode - Sketch to Reality
 
-Experience the power of the new **Drawer Mode** - create animations from your sketches!
+Experience the power of **Drawer Mode** - create animations from your sketches!
 
 <p align="center">
   <img src="assets/drawer_example.gif" alt="IMDER Drawer Mode" width="512"/>
@@ -217,7 +217,7 @@ Experience the power of the new **Drawer Mode** - create animations from your sk
   <em>Draw on canvas → Transform into image using IMDER's Drawer Mode</em>
 </p>
 
-**Draw, sketch, and watch your creations come to life** with IMDER's new interactive drawing tools.
+**Draw, sketch, and watch your creations come to life** with IMDER's interactive drawing tools.
 
 ---
 
@@ -236,7 +236,7 @@ Experience the power of the new **Drawer Mode** - create animations from your sk
 | **Navigate** | Gradient-guided pixel movement |
 | **Swap** | Bidirectional pixel exchange |
 | **Blend** | Physics-inspired animated transitions |
-| **Drawer** | **NEW** Transform hand-drawn sketches into images |
+| **Drawer** | Transform hand-drawn sketches into images |
 
 ### 🎬 Video Processing Modes
 
@@ -263,21 +263,19 @@ Experience the power of the new **Drawer Mode** - create animations from your sk
 - **Flip** - Horizontal mirror
 - **Shape Selection** - Auto-segmentation or manual drawing (GUI only)
 - **Multi-segment Selection** - Select multiple distinct regions (GUI only)
-- **Drawer Tools** - **NEW** Canvas drawing with undo/redo, color picker, adjustable brushes
+- **Drawer Tools** - Canvas drawing with undo/redo, color picker, adjustable brushes
 
-### 📊 Resolution Options
+### 📊 Resolution & Quality Options
 
-- 128×128 (fastest, demo quality)
-- 256×256
-- 512×512 (recommended for balance)
-- 768×768
-- 1024×1024
-- **2048×2048** (maximum quality—Obamify can't match this!)
+- **Standard Resolutions:** 128×128 (fastest) to 2048×2048 (maximum quality)
+- **Custom Resolution:** Configure any resolution up to **16384×16384**
+- **Smart Scaling:** Automatic upscaling or downscaling to match targeted resolution
+- **FPS Configuration:** Export videos at 30, 60, 90, 120, or 240 FPS
 
 ### 💾 Export Formats
 
 - **Frame (PNG)** - Static blended image
-- **Animation (MP4)** - Full 30fps video
+- **Animation (MP4)** - Full resolution video (30-240fps)
 - **GIF** - Animated with customizable duration
 - **Video with Audio** - MP4 with synthesized or target audio
 
@@ -288,7 +286,7 @@ Unlike Obamify, IMDER allows you to:
 - Manually draw custom masks with the Pen tool
 - Combine multiple segments for precise control
 - Exclude specific areas from processing
-- **NEW** Create animations from hand-drawn sketches
+- Create animations from hand-drawn sketches
 
 ---
 
@@ -374,16 +372,16 @@ See **[pip-imder.md](pip-imder.md)** for complete library documentation.
 ### GUI Mode (Source Version)
 
 1. Launch: `python src/imder.py`
-2. Select processing mode from the dropdown (now with 10 options including **Drawer**)
-3. Choose resolution (start with 256×256 for speed)
-4. For **Drawer Mode**: Draw on canvas, then add target image
-5. For other modes: Click "Add Media" on both panels to load images
-6. Optionally, use Rotate/Flip to adjust images
-7. For advanced modes, use "Analyze Shapes" or draw custom masks
-8. Enable audio options if desired
-9. Click "Start Processing" to preview the animation
-10. Export as PNG, MP4, GIF, or with synchronized audio
-
+2. Select processing mode from the dropdown (10 options including Drawer)
+3. Choose resolution (standard presets or Custom up to 16384×16384)
+4. Select FPS (30-240) for video exports
+5. For **Drawer Mode**: Draw on canvas, then add target image
+6. For other modes: Click "Add" on both panels to load images
+7. Optionally, use Rotate/Flip to adjust images
+8. For advanced modes, use "Analyze Shapes" or draw custom masks
+9. Enable audio options if desired
+10. Click "Start Processing" to preview the animation
+11. Export as PNG, MP4, GIF, or with synchronized audio
 
 ### CLI Mode (Source Version)
 
@@ -426,9 +424,10 @@ Compare the experience yourself:
 - **Morton Code Ordering** - Efficient spatial pixel mapping
 - **K-Means Clustering** - Intelligent shape detection
 - **Binary Morphing** - Enhanced shape transition algorithm
-- **Canvas Drawing Engine** - New interactive drawing tools
+- **Canvas Drawing Engine** - Interactive drawing tools
 - **QThread Processing** - Non-blocking UI during operations (GUI)
 - **Frame-Accurate Video Processing** - Pixel-perfect video transformations
+- **Dynamic Scaling** - Intelligent resolution matching
 
 ---
 
@@ -439,8 +438,9 @@ Compare the experience yourself:
 | 128×128 | ~2 seconds | ~30 seconds |
 | 512×512 | ~8 seconds | Several minutes |
 | 2048×2048 | ~45 seconds | **Hours or crashes** |
+| 16384×16384 | Minutes | **Impossible** |
 
-*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Video processing time depends on frame count and selected resolution.*
+*Results may vary based on hardware. IMDER maintains smooth performance across all resolutions. Video processing time depends on frame count, resolution, and FPS.*
 
 ---
 
