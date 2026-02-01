@@ -1,4 +1,4 @@
-#v1.2.0
+#v1.2.5
 import sys
 import os
 import time
@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QPushButton, QFileDialog, 
                              QMessageBox, QProgressBar, QFrame, QSizePolicy, 
                              QDesktopWidget, QComboBox, QMenu, QAction, QSlider,
-                             QColorDialog, QGridLayout)
+                             QColorDialog, QGridLayout, QInputDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPalette, QPainter, QPen, QBrush
 
@@ -338,7 +338,6 @@ class DrawingCanvas(QLabel):
             point = self.get_scaled_point(event.pos())
             if point:
                 self.last_point = point
-                self.save_to_history()
                 
     def mouseMoveEvent(self, event):
         if self.drawing:
@@ -350,6 +349,7 @@ class DrawingCanvas(QLabel):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.drawing:
             self.drawing = False
+            self.save_to_history()
             
     def draw_line(self, start, end):
         painter = QPainter(self.canvas_layer)
@@ -972,7 +972,7 @@ def add_audio_to_video(video_path, frames, fps, output_path, sound_option='mute'
             print(f"Error: Target audio file not found: {target_audio_path}")
             return video_path
     elif sound_option == 'sound':
-        frame_duration = 1.0 / fps
+        frame_duration = 1.0 / self.fps
         sample_rate = 44100
         
         print(f"\nGenerating sound for each frame:")
@@ -1032,7 +1032,7 @@ class ProcessingThread(QThread):
 
     def __init__(self, base_path, target_path, mode='preview', algo_mode='shuffle', 
                  base_transforms=None, target_transforms=None, mask=None, resolution=128,
-                 sound_option='mute', audio_quality=30, base_image_array=None):
+                 sound_option='mute', audio_quality=30, base_image_array=None, fps=30):
         super().__init__()
         self.base_path = base_path
         self.target_path = target_path
@@ -1045,6 +1045,7 @@ class ProcessingThread(QThread):
         self.sound_option = sound_option
         self.audio_quality = audio_quality
         self.base_image_array = base_image_array
+        self.fps = fps
         self.running = True
         self.output_dir = "results"
         if not os.path.exists(self.output_dir):
@@ -1076,6 +1077,11 @@ class ProcessingThread(QThread):
 
         h_b, w_b = base_img.shape[:2]
         h_t, w_t = target_img.shape[:2]
+
+        base_img = self.apply_upscale(base_img, self.resolution)
+        target_img = self.apply_upscale(target_img, self.resolution)
+        h_b, w_b = base_img.shape[:2]
+        h_t, w_t = target_img.shape[:2]
         
         limit_res = min(h_b, w_b, h_t, w_t)
         process_res = min(self.resolution, limit_res)
@@ -1092,7 +1098,7 @@ class ProcessingThread(QThread):
         
         if self.algo_mode == 'missform':
             missform = Missform(base_img, target_img, threshold=127)
-            frames = 302
+            frames = int(self.fps * 10)
             width, height = process_res, process_res
             
             if self.mode == 'export_video':
@@ -1103,7 +1109,7 @@ class ProcessingThread(QThread):
                     out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
                     out_path = os.path.abspath(out_path)
                     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(silent_path, fourcc, 30.0, (width, height))
+                    out = cv2.VideoWriter(silent_path, fourcc, float(self.fps), (width, height))
                     self.video_frames = []
                 else:
                     out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
@@ -1156,7 +1162,7 @@ class ProcessingThread(QThread):
                 cv2.imwrite(out_path, cv2.cvtColor(final_frame, cv2.COLOR_RGB2BGR))
                 self.finished_signal.emit(f"Saved to {out_path}")
             elif self.mode == 'export_gif' and gif_frames:
-                gif_frames[0].save(out_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=33, loop=0)
+                gif_frames[0].save(out_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=int(1000/self.fps), loop=0)
                 self.finished_signal.emit(f"Saved to {out_path}")
             else:
                 self.finished_signal.emit("Preview finished")
@@ -1172,7 +1178,7 @@ class ProcessingThread(QThread):
             
             assignments = assign_pixels(base_img, target_img, self.algo_mode, proc_mask)
         
-        frames = 302 
+        frames = int(self.fps * 10) 
         width, height = process_res, process_res
         
         source_flat = base_img.reshape(-1, 3).astype(np.float32)
@@ -1229,7 +1235,7 @@ class ProcessingThread(QThread):
                 out_path = os.path.join(self.output_dir, f"video_{timestamp}.mp4")
                 out_path = os.path.abspath(out_path)
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(out_path, fourcc, 30.0, (width, height))
+                out = cv2.VideoWriter(out_path, fourcc, float(self.fps), (width, height))
         elif self.mode == 'export_gif':
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             out_path = os.path.join(self.output_dir, f"animation_{timestamp}.gif")
@@ -1348,13 +1354,22 @@ class ProcessingThread(QThread):
             cv2.imwrite(out_path, cv2.cvtColor(final_frame, cv2.COLOR_RGB2BGR))
             self.finished_signal.emit(f"Saved to {out_path}")
         elif self.mode == 'export_gif' and gif_frames:
-            gif_frames[0].save(out_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=33, loop=0)
+            gif_frames[0].save(out_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=int(1000/self.fps), loop=0)
             self.finished_signal.emit(f"Saved to {out_path}")
         else:
             self.finished_signal.emit("Preview finished")
     
     def stop(self):
         self.running = False
+
+    def apply_upscale(self, img, target_res):
+        h, w = img.shape[:2]
+        min_dim = min(h, w)
+        factor = int((target_res / min_dim) + 0.9999)
+        if factor >= 2:
+            new_h, new_w = h * factor, w * factor
+            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        return img
 
 class ScalableImageLabel(QLabel):
     clicked = pyqtSignal(int, int)
@@ -1574,7 +1589,7 @@ class MediaPanel(QFrame):
         
         btn_layout = QHBoxLayout()
         
-        self.add_btn = QPushButton("Add Media")
+        self.add_btn = QPushButton("Add")
         self.add_btn.setStyleSheet(get_main_button_style())
         self.add_btn.setCursor(Qt.PointingHandCursor)
         self.add_btn.clicked.connect(self.load_media)
@@ -1664,6 +1679,7 @@ class MediaPanel(QFrame):
                     cv2.imwrite(temp_path, drawing)
                     self.file_path = temp_path
                     self.original_file_path = temp_path
+                    self.add_btn.setText("Replace")
                     self.update_preview()
                     self.info_lbl.setText(f"Drawing ({drawing.shape[1]}x{drawing.shape[0]})")
                 layout = self.preview_container.layout()
@@ -1679,7 +1695,8 @@ class MediaPanel(QFrame):
             self.clear_btn.setVisible(False)
             self.reset_btn.setVisible(False)
             self.drawer_tools.setVisible(False)
-            self.info_lbl.setText("No media loaded")
+            if not self.file_path:
+                self.info_lbl.setText("No media loaded")
 
     def undo_drawing(self):
         if self.drawing_canvas:
@@ -1867,7 +1884,7 @@ class MediaPanel(QFrame):
             else:
                 self.info_lbl.setText(f"{name} ({size:.1f} MB)")
                 
-            self.add_btn.setText("Replace Media")
+            self.add_btn.setText("Replace")
             self.remove_btn.setEnabled(True)
             self.rotate_btn.setEnabled(True)
             self.flip_btn.setEnabled(True)
@@ -1961,7 +1978,7 @@ class MediaPanel(QFrame):
         self.manual_mask = None
         self.preview.setPixmap(QPixmap())
         self.info_lbl.setText("No media loaded")
-        self.add_btn.setText("Add Media")
+        self.add_btn.setText("Add")
         self.remove_btn.setEnabled(False)
         self.rotate_btn.setEnabled(False)
         self.flip_btn.setEnabled(False)
@@ -2044,12 +2061,26 @@ class ImderGUI(QMainWindow):
         res_lbl.setStyleSheet(get_subtitle_label_style())
         
         self.res_combo = QComboBox()
-        self.res_combo.addItems(["128x128", "256x256", "512x512", "768x768", "1024x1024", "2048x2048"])
+        self.res_combo.addItems(["128x128", "256x256", "512x512", "768x768", "1024x1024", "2048x2048", "Custom"])
         self.res_combo.setStyleSheet(get_combo_box_style())
         self.res_combo.setMinimumWidth(120)
+        self.res_combo.currentTextChanged.connect(self.on_resolution_changed)
         
         header_layout.addWidget(res_lbl)
         header_layout.addWidget(self.res_combo)
+        fps_lbl = QLabel("FPS:")
+        fps_lbl.setStyleSheet(get_subtitle_label_style())
+        
+        self.fps_combo = QComboBox()
+        self.fps_combo.addItems(["30", "60", "90", "120", "240"])
+        self.fps_combo.setCurrentIndex(0)
+        self.fps_combo.setStyleSheet(get_combo_box_style())
+        self.fps_combo.setMinimumWidth(80)
+        
+        header_layout.addWidget(fps_lbl)
+        header_layout.addWidget(self.fps_combo)
+
+
         
         header_layout.addStretch()
         main_layout.addLayout(header_layout)
@@ -2057,7 +2088,7 @@ class ImderGUI(QMainWindow):
         panels_layout = QHBoxLayout()
         panels_layout.setSpacing(16)
         
-        self.base_panel = MediaPanel("Base Image")
+        self.base_panel = MediaPanel("Base")
         
         self.preview_panel = QFrame()
         self.preview_panel.setStyleSheet(get_panel_style())
@@ -2065,7 +2096,7 @@ class ImderGUI(QMainWindow):
         p_layout.setContentsMargins(12, 12, 12, 12)
         p_layout.setSpacing(10)
         
-        self.reverse_btn = QPushButton("Reverse Swap")
+        self.reverse_btn = QPushButton("Swap")
         self.reverse_btn.setStyleSheet(get_surface_button_style())
         self.reverse_btn.setCursor(Qt.PointingHandCursor)
         self.reverse_btn.clicked.connect(self.swap_media)
@@ -2086,7 +2117,7 @@ class ImderGUI(QMainWindow):
         self.preview_display.setMinimumSize(200, 200)
         p_layout.addWidget(self.preview_display, stretch=1)
         
-        self.target_panel = MediaPanel("Target Image", is_target=True)
+        self.target_panel = MediaPanel("Target", is_target=True)
         self.target_panel.setEnabled(False)
         
         panels_layout.addWidget(self.base_panel, stretch=1)
@@ -2182,27 +2213,44 @@ class ImderGUI(QMainWindow):
         
         self.worker = None
         self.cached_frames = []
+        self.current_fps = 30
+
+    def on_resolution_changed(self, text):
+        if text == "Custom":
+            val, ok = QInputDialog.getInt(self, "Custom Resolution", "Enter resolution (1-16384):", 1024, 1, 16384)
+            if ok:
+                new_res = f"{val}x{val}"
+                custom_idx = self.res_combo.findText("Custom")
+                existing_idx = self.res_combo.findText(new_res)
+                if existing_idx >= 0:
+                    self.res_combo.setCurrentIndex(existing_idx)
+                else:
+                    self.res_combo.insertItem(custom_idx, new_res)
+                    self.res_combo.setCurrentIndex(custom_idx)
+            else:
+                self.res_combo.setCurrentIndex(0)
 
     def on_mode_changed(self, text):
         mode = text.lower()
-        
+
         if mode == 'drawer':
             self.base_panel.set_drawer_mode(True)
             self.target_panel.setEnabled(True)
             self.reverse_btn.setEnabled(False)
+            self.target_panel.analyze_btn.setVisible(False)
+            self.target_panel.pen_btn.setVisible(False)
+            self.target_panel.stop_analysis()
             self.check_ready()
         else:
             self.base_panel.set_drawer_mode(False)
-            self.target_panel.setEnabled(True)
-            self.reverse_btn.setEnabled(True)
+            self.target_panel.setEnabled(bool(self.base_panel.file_path))
             self.target_panel.analyze_btn.setVisible(mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'])
             self.target_panel.pen_btn.setVisible(mode in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion'])
-            
+
             if mode not in ['pattern', 'disguise', 'navigate', 'swap', 'blend', 'fusion']:
                 self.target_panel.stop_analysis()
-            
-            self.check_ready()
 
+            self.check_ready()
     def swap_media(self):
         if self.mode_combo.currentText().lower() == 'drawer':
             return
@@ -2282,6 +2330,7 @@ class ImderGUI(QMainWindow):
         self.progress.setValue(0)
         self.set_processing_state(True)
         self.cached_frames = []
+        self.current_fps = int(self.fps_combo.currentText())
         
         b_trans = {'rotate': self.base_panel.rotate_steps, 'flip': self.base_panel.is_flipped}
         t_trans = {'rotate': self.target_panel.rotate_steps, 'flip': self.target_panel.is_flipped}
@@ -2322,7 +2371,8 @@ class ImderGUI(QMainWindow):
             resolution,
             sound_option,
             audio_quality,
-            base_image_array
+            base_image_array,
+            int(self.fps_combo.currentText())
         )
         self.worker.frame_signal.connect(self.update_preview)
         self.worker.progress_signal.connect(self.progress.setValue)
@@ -2368,19 +2418,25 @@ class ImderGUI(QMainWindow):
 
     def run_replay(self, reverse):
         if not self.cached_frames: return
-        
-        frames = self.cached_frames[::-1] if reverse else self.cached_frames
-        self.replay_index = 0
-        self.replay_list = frames
-        self.replay_timer = QTimer()
-        self.replay_timer.timeout.connect(self.play_next_frame)
-        self.replay_timer.start(33)
 
-    def play_next_frame(self):
-        if self.replay_index < len(self.replay_list):
-            self.preview_display.setPixmap(QPixmap.fromImage(self.replay_list[self.replay_index]))
-            self.replay_index += 1
+        self.replay_frames = self.cached_frames[::-1] if reverse else self.cached_frames
+        self.replay_start_time = time.time()
+        self.replay_duration = 10.0
+        self.replay_timer = QTimer()
+        self.replay_timer.timeout.connect(self.play_frame_synced)
+        self.replay_timer.start(16)
+
+    def play_frame_synced(self):
+        elapsed = time.time() - self.replay_start_time
+        progress = elapsed / self.replay_duration
+        total_frames = len(self.replay_frames)
+
+        frame_idx = int(progress * total_frames)
+
+        if frame_idx < total_frames:
+            self.preview_display.setPixmap(QPixmap.fromImage(self.replay_frames[frame_idx]))
         else:
+            self.preview_display.setPixmap(QPixmap.fromImage(self.replay_frames[-1]))
             self.replay_timer.stop()
 
 def print_banner():
@@ -2679,7 +2735,7 @@ def cli_video_process(base_path, target_path, algo_mode, resolution, sound_optio
             print(f"export result as gif {percent:.1f}%")
     
     if gif_frames:
-        gif_frames[0].save(gif_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=int(1000/fps), loop=0)
+        gif_frames[0].save(gif_path, save_all=True, append_images=gif_frames[1:], optimize=False, duration=int(1000/self.fps), loop=0)
     
     print(f"\nprocessing finished, results saved to results/")
     print(f"Video: {os.path.basename(video_path)}")
