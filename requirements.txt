@@ -12,4 +12,4 @@ Pillow
 pyfiglet
 
 # Audio Processing
-ffmpeg-python
+ffmpeg
