@@ -13,7 +13,7 @@
 📦 **Latest Release: v1.2.5** (February 2026) — Featuring custom resolutions up to 16384×16384, configurable FPS (30-240), and smart scaling support.
 
 **Important Notes:**
-- 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows [v1.2.5](https://github.com/HAKORADev/IMDER/releases/tag/v1.2.5) and macOS/Linux (v1.0.0), but running from source ensures you always have the newest features and fixes.
+- 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows [v1.2.5](https://github.com/HAKORADev/IMDER/releases/tag/v1.2.5) and macOS/Linux [v1.0.0](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0), but running from source ensures you always have the newest features and fixes.
 - 🤖 **For AI agents and automated tools:** See [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
 
 📦 **IMDER is available as a Python library on PyPI:** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
