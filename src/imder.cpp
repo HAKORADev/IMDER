@@ -1,3 +1,4 @@
+#include "imder_plugins.h"
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QWidget>
@@ -24,6 +25,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
+#include <QtCore/QTemporaryDir>
 #include <QtGui/QColor>
 #include <QtCore/QPoint>
 #include <QtCore/QSize>
@@ -36,7 +38,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/videoio.hpp>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -53,8 +54,122 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
+#include <thread>
+#include <chrono>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <process.h>
+#else
 #include <unistd.h>
 #include <sys/stat.h>
+#endif
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+static void attach_parent_console(int argc,char* argv[]){
+#ifdef _WIN32
+    (void)argc;(void)argv;
+    if(GetConsoleWindow()!=nullptr) return;
+    if(!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+    freopen("CONOUT$","w",stdout);
+    freopen("CONOUT$","w",stderr);
+    freopen("CONIN$","r",stdin);
+    SetConsoleOutputCP(65001);
+#endif
+}
+
+static std::string outNull(){
+#ifdef _WIN32
+    return " > NUL 2>&1";
+#else
+    return " >/dev/null 2>&1";
+#endif
+}
+
+static FILE* openPipe(const std::string& cmd,const char* mode){
+#ifdef _WIN32
+    return _popen(cmd.c_str(),mode);
+#else
+    return popen(cmd.c_str(),mode);
+#endif
+}
+
+static int closePipe(FILE* p){
+#ifdef _WIN32
+    return _pclose(p);
+#else
+    return pclose(p);
+#endif
+}
+
+static std::tm localTm(time_t t){
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv,&t);
+#else
+    localtime_r(&t,&tmv);
+#endif
+    return tmv;
+}
+
+static bool checkFfmpeg(){FILE* p=openPipe("ffmpeg -version","rb");if(!p)return false;char buf[256];size_t n=fread(buf,1,sizeof(buf),p);closePipe(p);return n>0;}
+
+struct FfmpegWriter {
+    FILE* p=nullptr;
+    bool open(const std::string& path,int w,int h,double fps){
+        if(!checkFfmpeg()) return false;
+        std::string cmd="ffmpeg -y -f rawvideo -pix_fmt bgr24 -s "+std::to_string(w)+"x"+std::to_string(h)+
+        " -r "+std::to_string(fps)+" -i - -c:v mpeg4 -q:v 2 \""+path+"\""+outNull();
+        p=openPipe(cmd.c_str(),"wb");
+        return p!=nullptr;
+    }
+    bool isOpened() const {return p!=nullptr;}
+    void write(const cv::Mat& bgr){ if(p) fwrite(bgr.data,1,(size_t)bgr.total()*bgr.elemSize(),p); }
+    void release(){ if(p){ fclose(p); p=nullptr; } }
+};
+
+struct FfmpegReader {
+    FILE* p=nullptr;
+    int w=0,h=0;
+    double fps=30.0;
+    bool open(const std::string& path){
+        if(!probeMeta(path)) return false;
+        std::string cmd="ffmpeg -v quiet -i \""+path+"\" -f rawvideo -pix_fmt bgr24 -";
+        p=openPipe(cmd.c_str(),"rb");
+        return p!=nullptr;
+    }
+    bool probeMeta(const std::string& path){
+        std::string cmd="ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 \""+path+"\"";
+        FILE* pr=openPipe(cmd.c_str(),"rb");
+        if(!pr) return false;
+        char buf[512]={0}; size_t n=fread(buf,1,sizeof(buf)-1,pr); closePipe(pr);
+        if(n==0) return false;
+        int iw=0,ih=0; char rate[64]={0};
+        if(sscanf(buf,"%d,%d,%63s",&iw,&ih,rate)!=3) return false;
+        int num=0,den=1; sscanf(rate,"%d/%d",&num,&den);
+        if(iw<=0||ih<=0) return false;
+        if(num>0&&den>0) fps=(double)num/(double)den;
+        if(fps<=0||fps>1000) fps=30.0;
+        w=iw;h=ih;
+        return true;
+    }
+    bool read(cv::Mat& out){
+        if(!p) return false;
+        cv::Mat frm(h,w,CV_8UC3);
+        size_t got=fread(frm.data,1,(size_t)w*h*3,p);
+        if(got!=(size_t)w*h*3) return false;
+        out=frm; return true;
+    }
+    void release(){ if(p){ fclose(p); p=nullptr; } }
+};
 
 static QString mainBtnStyle(){return R"(
     QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,
@@ -164,8 +279,6 @@ static QString mainBtnStyle(){return R"(
                 fclose(f);return true;
             }
 
-            static bool checkFfmpeg(){return system("ffmpeg -version >/dev/null 2>&1")==0;}
-
             static bool extractAudio(const std::string& vid,const std::string& out,double dur,int quality){
                 if(!checkFfmpeg()){fprintf(stderr,"Error: ffmpeg not found.\n");return false;}
                 const char* qmap[]={"32k","64k","96k","128k","160k","192k","224k","256k","320k","copy"};
@@ -174,7 +287,7 @@ static QString mainBtnStyle(){return R"(
                 if(dur>0) cmd+=" -t "+std::to_string(dur);
                 if(std::string(qmap[qi])=="copy") cmd+=" -c:a copy";
                 else cmd+=" -b:a "+std::string(qmap[qi]);
-                cmd+=" -y \""+out+"\" >/dev/null 2>&1";
+                cmd+=" -y \""+out+"\""+outNull();
                 return system(cmd.c_str())==0;
             }
 
@@ -210,9 +323,10 @@ static QString mainBtnStyle(){return R"(
                                              if(soundOpt=="mute") return videoPath;
                                              if(!checkFfmpeg()){fprintf(stderr,"Error: ffmpeg not found.\n");return videoPath;}
 
-                                             char tmpDir[]=("/tmp/imder_XXXXXX");
-                                             if(!mkdtemp(tmpDir)) return videoPath;
-                                             std::string audioPath=std::string(tmpDir)+"/audio.mp3";
+                                             QTemporaryDir tmpDir;
+                                             if(!tmpDir.isValid()) return videoPath;
+                                             std::string tmpPath=tmpDir.path().toStdString();
+                                             std::string audioPath=tmpPath+"/audio.mp3";
 
                                              if(soundOpt=="target-sound"&&!targetAudioPath.empty()){
                                                  double dur=frames.empty()?0.0:(double)frames.size()/fps;
@@ -224,16 +338,15 @@ static QString mainBtnStyle(){return R"(
                                                  for(int i=0;i<(int)frames.size();i++){
                                                      genSoundForFrame(frames[i],fd,sr,full);
                                                  }
-                                                 std::string wp=std::string(tmpDir)+"/audio.wav";
+                                                 std::string wp=tmpPath+"/audio.wav";
                                                  audioPath=wp;
                                                  if(!writeWav(audioPath,full,sr)) return videoPath;
                                              } else { return videoPath; }
 
                                              std::string cmd="ffmpeg -i \""+videoPath+"\" -i \""+audioPath+
                                              "\" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -y \""+
-                                             outPath+"\" >/dev/null 2>&1";
+                                             outPath+"\""+outNull();
                                              if(system(cmd.c_str())!=0){fprintf(stderr,"Error adding audio.\n");return videoPath;}
-                                             (std::string("rm -rf \"")+tmpDir+"\"") ; system(("rm -rf \""+std::string(tmpDir)+"\"").c_str());
                                              return outPath;
                                                                             }
 
@@ -241,7 +354,7 @@ static QString mainBtnStyle(){return R"(
                                                                                 // GIF encoder using ffmpeg - reliable and produces valid GIFs
                                                                                 struct Encoder {
                                                                                     std::string outputPath;
-                                                                                    std::string tmpDir;
+                                                                                    QTemporaryDir tmpDir;
                                                                                     std::vector<cv::Mat> frames;
                                                                                     int w, h, delayMs;
 
@@ -249,12 +362,7 @@ static QString mainBtnStyle(){return R"(
                                                                                         w = W; h = H; delayMs = delay_ms;
                                                                                         outputPath = path;
                                                                                         frames.clear();
-
-                                                                                        // Create temp directory for frames
-                                                                                        char tmp[] = "/tmp/imder_gif_XXXXXX";
-                                                                                        if (!mkdtemp(tmp)) return false;
-                                                                                        tmpDir = tmp;
-                                                                                        return true;
+                                                                                        return tmpDir.isValid();
                                                                                     }
 
                                                                                     void writeFrame(const cv::Mat& rgb) {
@@ -263,12 +371,13 @@ static QString mainBtnStyle(){return R"(
 
                                                                                     void close() {
                                                                                         if (frames.empty()) return;
+                                                                                        std::string tmpPath = tmpDir.path().toStdString();
 
                                                                                         // Write frames as PNG files
                                                                                         for (size_t i = 0; i < frames.size(); i++) {
                                                                                             cv::Mat bgr;
                                                                                             cv::cvtColor(frames[i], bgr, cv::COLOR_RGB2BGR);
-                                                                                            std::string framePath = tmpDir + "/frame_" + std::to_string(i) + ".png";
+                                                                                            std::string framePath = tmpPath + "/frame_" + std::to_string(i) + ".png";
                                                                                             cv::imwrite(framePath, bgr);
                                                                                         }
 
@@ -278,18 +387,11 @@ static QString mainBtnStyle(){return R"(
 
                                                                                         // Use ffmpeg to create GIF
                                                                                         std::string cmd = "ffmpeg -y -framerate " + std::to_string(fps) +
-                                                                                        " -i " + tmpDir + "/frame_%d.png" +
+                                                                                        " -i \"" + tmpPath + "/frame_%d.png\"" +
                                                                                         " -vf \"scale=" + std::to_string(w) + ":" + std::to_string(h) + ":flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse\"" +
-                                                                                        " -loop 0 \"" + outputPath + "\" >/dev/null 2>&1";
+                                                                                        " -loop 0 \"" + outputPath + "\"" + outNull();
 
                                                                                         system(cmd.c_str());
-
-                                                                                        // Cleanup temp files
-                                                                                        for (size_t i = 0; i < frames.size(); i++) {
-                                                                                            std::string framePath = tmpDir + "/frame_" + std::to_string(i) + ".png";
-                                                                                            remove(framePath.c_str());
-                                                                                        }
-                                                                                        rmdir(tmpDir.c_str());
                                                                                         frames.clear();
                                                                                     }
                                                                                 };
@@ -612,7 +714,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                             throw std::runtime_error("Drawer mode requires base drawing data.");
 
                                                                                                                         const std::string outDir="results";
-                                                                                                                        mkdir(outDir.c_str(),0755);
+                                                                                                                        QDir().mkpath(QString::fromStdString(outDir));
 
                                                                                                                         cv::Mat baseImg,tgtImg;
                                                                                                                         if(cfg.algo=="drawer") baseImg=cfg.baseImageArray.clone();
@@ -636,19 +738,19 @@ static QString mainBtnStyle(){return R"(
                                                                                                                         int totalFrames=cfg.fps*10;
 
                                                                                                                         time_t now2=time(nullptr);
-                                                                                                                        char ts[32];strftime(ts,sizeof(ts),"%Y%m%d_%H%M%S",localtime(&now2));
+                                                                                                                        char ts[32];strftime(ts,sizeof(ts),"%Y%m%d_%H%M%S",&localTm(now2));
 
                                                                                                                         if(cfg.algo=="missform"){
                                                                                                                             Missform miss(baseImg,tgtImg,127.f);
                                                                                                                             std::string outPath,silPath;
-                                                                                                                            cv::VideoWriter vw; GIF::Encoder gifEnc;
+                                                                                                                            FfmpegWriter vw; GIF::Encoder gifEnc;
                                                                                                                             std::vector<cv::Mat> vframes;
                                                                                                                             if(cfg.mode=="export_video"){
-                                                                                                                                outPath=outDir+"/video_"+ts+".mp4";
-                                                                                                                                int fcc=cv::VideoWriter::fourcc('m','p','4','v');
-                                                                                                                                if(cfg.soundOpt!="mute"){silPath=outDir+"/video_"+ts+"_silent.mp4";vw.open(silPath,fcc,30.0,cv::Size(W,H));}
-                                                                                                                                else vw.open(outPath,fcc,30.0,cv::Size(W,H));
-                                                                                                                            } else if(cfg.mode=="export_gif"){
+                                                                                                                                outPath=outDir+"/video_"+ts+".mp4"; 
+                                                                                                                                if(cfg.soundOpt!="mute"){silPath=outDir+"/video_"+ts+"_silent.mp4";vw.open(silPath,W,H,(double)cfg.fps);}
+                                                                                                                                else vw.open(outPath,W,H,(double)cfg.fps);
+                                                                                                                                if(!vw.isOpened()){onError("cannot open video writer - ffmpeg is required for mp4 export");return;}
+                                                                                                                                } else if(cfg.mode=="export_gif"){
                                                                                                                                 outPath=outDir+"/animation_"+ts+".gif";gifEnc.open(outPath,W,H,1000/cfg.fps);
                                                                                                                             }
                                                                                                                             for(int f=0;f<totalFrames;f++){
@@ -659,7 +761,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                 cv::Mat frm=miss.frame(t);
                                                                                                                                 if(cfg.mode=="preview"){
                                                                                                                                     QImage qi(frm.data,W,H,W*3,QImage::Format_RGB888);onFrame(qi.copy());
-                                                                                                                                    struct timespec sl={0,16666666};nanosleep(&sl,nullptr);
+                                                                                                                                    std::this_thread::sleep_for(std::chrono::microseconds(16666));
                                                                                                                                 } else if(cfg.mode=="export_video"){
                                                                                                                                     if(cfg.soundOpt!="mute") vframes.push_back(frm.clone());
                                                                                                                                     cv::Mat bgr;cv::cvtColor(frm,bgr,cv::COLOR_RGB2BGR);vw.write(bgr);
@@ -670,7 +772,9 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                 if(cfg.soundOpt!="mute"){
                                                                                                                                     std::string tgtA=(cfg.soundOpt=="target-sound")?cfg.tgtPath:"";
                                                                                                                                     std::string fin=addAudioToVideo(silPath,vframes,(double)cfg.fps,outPath,cfg.soundOpt,tgtA,cfg.audioQuality);
-                                                                                                                                    remove(silPath.c_str());onFinish("Saved to "+fin);
+                                                                                                                                    remove(silPath.c_str());
+                                                                                                                                    if(fin==silPath) onError("audio mux failed - mp4 export produced no output");
+                                                                                                                                    else onFinish("Saved to "+fin);
                                                                                                                                 } else onFinish("Saved to "+outPath);
                                                                                                                             } else if(cfg.mode=="export_image"){
                                                                                                                                 std::string ip=outDir+"/image_"+ts+".png";
@@ -737,14 +841,14 @@ static QString mainBtnStyle(){return R"(
                                                                                                                             for(int i=0;i<N;i++) unmasked[i]=(procMask.data[i]==0);
 
                                                                                                                             std::string outPath,silPath;
-                                                                                                                        cv::VideoWriter vw; GIF::Encoder gifEnc;
+                                                                                                                        FfmpegWriter vw; GIF::Encoder gifEnc;
                                                                                                                         std::vector<cv::Mat> vframes;
                                                                                                                         if(cfg.mode=="export_video"){
-                                                                                                                            outPath=outDir+"/video_"+ts+".mp4";
-                                                                                                                            int fcc=cv::VideoWriter::fourcc('m','p','4','v');
-                                                                                                                            if(cfg.soundOpt!="mute"){silPath=outDir+"/video_"+ts+"_silent.mp4";vw.open(silPath,fcc,30.0,cv::Size(W,H));}
-                                                                                                                            else vw.open(outPath,fcc,(double)cfg.fps,cv::Size(W,H));
-                                                                                                                        } else if(cfg.mode=="export_gif"){
+                                                                                                                            outPath=outDir+"/video_"+ts+".mp4"; 
+                                                                                                                            if(cfg.soundOpt!="mute"){silPath=outDir+"/video_"+ts+"_silent.mp4";vw.open(silPath,W,H,(double)cfg.fps);}
+                                                                                                                            else vw.open(outPath,W,H,(double)cfg.fps);
+                                                                                                                            if(!vw.isOpened()){onError("cannot open video writer - ffmpeg is required for mp4 export");return;}
+                                                                                                                            } else if(cfg.mode=="export_gif"){
                                                                                                                             outPath=outDir+"/animation_"+ts+".gif";gifEnc.open(outPath,W,H,1000/cfg.fps);
                                                                                                                         }
 
@@ -806,7 +910,7 @@ static QString mainBtnStyle(){return R"(
 
                                                                                                                                 if(cfg.mode=="preview"){
                                                                                                                                     QImage qi(frm.data,W,H,W*3,QImage::Format_RGB888);onFrame(qi.copy());
-                                                                                                                                    struct timespec sl={0,16666666};nanosleep(&sl,nullptr);
+                                                                                                                                    std::this_thread::sleep_for(std::chrono::microseconds(16666));
                                                                                                                                 } else if(cfg.mode=="export_video"){
                                                                                                                                     if(cfg.soundOpt!="mute") vframes.push_back(frm.clone());
                                                                                                                                     cv::Mat bgr;cv::cvtColor(frm,bgr,cv::COLOR_RGB2BGR);vw.write(bgr);
@@ -818,7 +922,9 @@ static QString mainBtnStyle(){return R"(
                                                                                                                             if(cfg.soundOpt!="mute"){
                                                                                                                                 std::string tgtA=(cfg.soundOpt=="target-sound")?cfg.tgtPath:"";
                                                                                                                                 std::string fin=addAudioToVideo(silPath,vframes,(double)cfg.fps,outPath,cfg.soundOpt,tgtA,cfg.audioQuality);
-                                                                                                                                remove(silPath.c_str());onFinish("Saved to "+fin);
+                                                                                                                                remove(silPath.c_str());
+                                                                                                                                if(fin==silPath) onError("audio mux failed - mp4 export produced no output");
+                                                                                                                                else onFinish("Saved to "+fin);
                                                                                                                             } else onFinish("Saved to "+outPath);
                                                                                                                         } else if(cfg.mode=="export_image"){
                                                                                                                             std::string ip=outDir+"/image_"+ts+".png";
@@ -860,7 +966,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                 }
 
                                                                                                                 static bool validateMediaFile(const std::string& path){
-                                                                                                                    if(access(path.c_str(),F_OK)!=0){fprintf(stderr,"Error: File not found: %s\n",path.c_str());return false;}
+                                                                                                                    if(!QFile::exists(QString::fromStdString(path))){fprintf(stderr,"Error: File not found: %s\n",path.c_str());return false;}
                                                                                                                     static const char* E[]={".png",".jpg",".jpeg",".webp",".mp4",".avi",".mov",".mkv",".flv",".wmv"};
                                                                                                                     size_t d=path.rfind('.');if(d==std::string::npos){fprintf(stderr,"Error: No file extension.\n");return false;}
                                                                                                                     std::string e=path.substr(d);std::transform(e.begin(),e.end(),e.begin(),::tolower);
@@ -975,20 +1081,17 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                 static void cliVideoProcess(const std::string& basePath,const std::string& tgtPath,
                                                                                                                                                                             const std::string& algo,int resolution,
                                                                                                                                                                             const std::string& soundOpt,int audioQuality){
-                                                                                                                                                    const std::string outDir="results"; mkdir(outDir.c_str(),0755);
+                                                                                                                                                    const std::string outDir="results"; QDir().mkpath(QString::fromStdString(outDir));
                                                                                                                                                     bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
 
                                                                                                                                                     auto extractFrames=[&](const std::string& path,const char* desc,
                                                                                                                                                                            std::vector<cv::Mat>& frames,double& fps2){
-                                                                                                                                                        cv::VideoCapture cap(path);
-                                                                                                                                                        int total=(int)cap.get(cv::CAP_PROP_FRAME_COUNT);
-                                                                                                                                                        fps2=cap.get(cv::CAP_PROP_FPS);
-                                                                                                                                                        cv::Mat frm; int i=0;
-                                                                                                                                                        while(cap.read(frm)){
-                                                                                                                                                            frames.push_back(frm.clone());
-                                                                                                                                                            i++;
-                                                                                                                                                        }
-                                                                                                                                                        cap.release();
+                                                                                                                                                        FfmpegReader rd;
+if(!rd.open(path)){fprintf(stderr,"Error: cannot read %s\n",path.c_str());exit(1);}
+cv::Mat frm;
+while(rd.read(frm)) frames.push_back(frm.clone());
+fps2=rd.fps;
+rd.release();
                                                                                                                                                                            };
 
                                                                                                                                                                            std::vector<cv::Mat> bFrames,tFrames;
@@ -1026,7 +1129,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                            }
 
                                                                                                                                                                            time_t now2=time(nullptr);char ts2[32];
-                                                                                                                                                                           strftime(ts2,sizeof(ts2),"%Y%m%d_%H%M%S",localtime(&now2));
+                                                                                                                                                                           strftime(ts2,sizeof(ts2),"%Y%m%d_%H%M%S",&localTm(now2));
                                                                                                                                                                            std::string videoPath,gifPath;
                                                                                                                                                                            gifPath=outDir+"/animation_"+ts2+".gif";
 
@@ -1034,18 +1137,20 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                std::string silPath=outDir+"/video_"+ts2+"_silent.mp4";
                                                                                                                                                                                videoPath=outDir+"/video_"+ts2+".mp4";
                                                                                                                                                                                int fh=processed[0].rows,fw=processed[0].cols;
-                                                                                                                                                                               cv::VideoWriter vw(silPath,cv::VideoWriter::fourcc('m','p','4','v'),fps2,cv::Size(fw,fh));
+                                                                                                                                                                               FfmpegWriter vw; vw.open(silPath,fw,fh,fps2); if(!vw.isOpened()){fprintf(stderr,"Error: cannot open video writer - ffmpeg is required\n");exit(1);}
                                                                                                                                                                                for(int i=0;i<(int)processed.size();i++){
                                                                                                                                                                                    cv::Mat bgr;cv::cvtColor(processed[i],bgr,cv::COLOR_RGB2BGR);vw.write(bgr);
                                                                                                                                                                                }
                                                                                                                                                                                vw.release();
                                                                                                                                                                                std::string tgtAudio=(soundOpt=="target-sound"&&tIsVid)?tgtPath:"";
                                                                                                                                                                                std::string fin=addAudioToVideo(silPath,processed,fps2,videoPath,soundOpt,tgtAudio,audioQuality);
-                                                                                                                                                                               remove(silPath.c_str());videoPath=fin;
+                                                                                                                                                                               remove(silPath.c_str());
+                                                                                                                                                                               if(fin==silPath){fprintf(stderr,"Error: audio mux failed.\n");remove(videoPath.c_str());videoPath="";}
+                                                                                                                                                                               else videoPath=fin;
                                                                                                                                                                            } else {
                                                                                                                                                                                videoPath=outDir+"/video_"+ts2+".mp4";
                                                                                                                                                                                int fh=processed[0].rows,fw=processed[0].cols;
-                                                                                                                                                                               cv::VideoWriter vw(videoPath,cv::VideoWriter::fourcc('m','p','4','v'),fps2,cv::Size(fw,fh));
+                                                                                                                                                                               FfmpegWriter vw; vw.open(videoPath,fw,fh,fps2); if(!vw.isOpened()){fprintf(stderr,"Error: cannot open video writer - ffmpeg is required\n");exit(1);}
                                                                                                                                                                                for(int i=0;i<(int)processed.size();i++){
                                                                                                                                                                                    cv::Mat bgr;cv::cvtColor(processed[i],bgr,cv::COLOR_RGB2BGR);vw.write(bgr);
                                                                                                                                                                                }
@@ -1333,6 +1438,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                                                                             cv::Mat manualMask;
                                                                                                                                                                                                                                             ScalableImageLabel* preview=nullptr;
                                                                                                                                                                                                                                             DrawingCanvas* drawingCanvas=nullptr;
+QTemporaryDir drawTmp;
                                                                                                                                                                                                                                             QWidget* previewContainer=nullptr;
                                                                                                                                                                                                                                             QLabel* infoLbl=nullptr;
                                                                                                                                                                                                                                             QPushButton* analyzeBtn=nullptr,*penBtn=nullptr;
@@ -1478,8 +1584,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                                                                                     if(was&&drawingCanvas){
                                                                                                                                                                                                                                                         cv::Mat drawing=drawingCanvas->getImageArray();
                                                                                                                                                                                                                                                         if(!drawing.empty()){
-                                                                                                                                                                                                                                                            std::string tmp="/tmp/imder_draw_"+std::to_string((uintptr_t)this)+"_"+
-                                                                                                                                                                                                                                                            std::to_string((int)time(nullptr))+".png";
+                                                                                                                                                                                                                                                            std::string tmp=drawTmp.path().toStdString()+"/drawing.png";
                                                                                                                                                                                                                                                             cv::imwrite(tmp,drawing);
                                                                                                                                                                                                                                                             filePath=QString::fromStdString(tmp);
                                                                                                                                                                                                                                                             originalFilePath=filePath;
@@ -1853,8 +1958,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                                                                                     cfg.baseImageArray=basePanel->getDrawingArray();
                                                                                                                                                                                                                                                     if(cfg.baseImageArray.empty()){statusBar->setText("No drawing found");setProcessingState(false);return;}
                                                                                                                                                                                                                                                 } else {
-                                                                                                                                                                                                                                                    if(!targetPanel->manualMask.empty()) cfg.mask=targetPanel->getMask();
-                                                                                                                                                                                                                                                    else cfg.mask=targetPanel->getMask();
+                                                                                                                                                                                                                                                    cfg.mask=targetPanel->getMask();
                                                                                                                                                                                                                                                 }
                                                                                                                                                                                                                                                 worker=new ProcessingThread(cfg,this);
                                                                                                                                                                                                                                                 connect(worker,&ProcessingThread::progressSignal,progress,&QProgressBar::setValue);
@@ -1909,6 +2013,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                                                                         };
 
                                                                                                                                                                                                                                         int main(int argc,char* argv[]){
+                                                                                                                                                                                                                                            attach_parent_console(argc,argv);
                                                                                                                                                                                                                                             QApplication app(argc,argv);
                                                                                                                                                                                                                                             app.setStyle("Fusion");
 
@@ -1987,4 +2092,4 @@ static QString mainBtnStyle(){return R"(
                                                                                                                                                                                                                                             return app.exec();
                                                                                                                                                                                                                                         }
 
-                                                                                                                                                                                                                                        #include "imder_linux.moc"
+                                                                                                                                                                                                                                        #include "imder.moc"

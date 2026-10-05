@@ -1,0 +1,264 @@
+name: native build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'release version without the v, e.g. 1.2.5 (tag becomes v1.2.5)'
+        required: true
+      publish:
+        description: 'replace the release assets in-place'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows-cpp:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cache static qt
+        id: qtcache
+        uses: actions/cache@v4
+        with:
+          path: D:\qts
+          key: qt-5.15-static-msvc-imder-v1
+
+      - name: build static qt 5.15.2 (base)
+        if: steps.qtcache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          git clone --depth 1 -b 5.15 https://github.com/qt/qtbase D:\src\qtbase
+          curl -L -o D:\jom.zip https://download.qt.io/official_releases/jom/jom.zip || exit /b 1
+          mkdir D:\jom && tar -xf D:\jom.zip -C D:\jom
+          for /r D:\jom %%i in (jom.exe) do set "JOM=%%i"
+          if not defined JOM exit /b 1
+          echo using jom at %JOM%
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          mkdir D:\src\build && cd /d D:\src\build
+          call ..\qtbase\configure.bat -static -static-runtime -release -opensource -confirm-license -prefix D:\qts -nomake examples -nomake tests -platform win32-msvc -opengl desktop -no-openssl -no-dbus || exit /b 1
+          "%JOM%" -j4 || exit /b 1
+          "%JOM%" -j4 install || exit /b 1
+
+      - name: cache static opencv
+        id: ocvcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:\src\ocvbuild
+            D:\src\opencv
+          key: opencv-4.10.0-static-msvc-imder-v1
+
+      - name: build static opencv (core imgproc imgcodecs)
+        if: steps.ocvcache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          if (Test-Path D:\src\opencv\CMakeLists.txt) { Write-Host "opencv source cached"; exit 0 }
+          git clone --depth 1 --branch 4.10.0 https://github.com/opencv/opencv D:\src\opencv
+          cmake -S D:\src\opencv -B D:\src\ocvbuild -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_BUILD_TYPE=Release" "-DBUILD_SHARED_LIBS=OFF" `
+            "-DBUILD_LIST=core,imgproc,imgcodecs" "-DBUILD_TESTS=OFF" "-DBUILD_PERF_TESTS=OFF" `
+            "-DBUILD_EXAMPLES=OFF" "-DBUILD_opencv_apps=OFF" "-DBUILD_JPEG=ON" "-DBUILD_PNG=ON" `
+            "-DBUILD_ZLIB=ON" "-DBUILD_WEBP=ON" "-DBUILD_TIFF=ON" "-DBUILD_OPENEXR=OFF" `
+            "-DWITH_OPENCL=OFF" "-DWITH_IPP=OFF" "-DWITH_ITT=OFF" "-DWITH_TBB=OFF" `
+            "-DWITH_FFMPEG=OFF" "-DWITH_GTK=OFF" "-DWITH_OPENEXR=OFF" "-DWITH_JASPER=OFF" "-DENABLE_LIBJPEG_TURBO_SIMD=OFF"
+          cmake --build D:\src\ocvbuild --config Release -j 4
+
+      - name: generate static plugin imports
+        shell: pwsh
+        run: |
+          python scripts\gen_plugins.py D:\src\gen\imder_plugins.h D:\src\qtbase windows
+          Copy-Item D:\src\gen\imder_plugins.h src\imder_plugins.h
+
+      - name: build imder (single exe, /MT, WIN32)
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DQt5_DIR="D:\qts\lib\cmake\Qt5" `
+            -DOpenCV_DIR="D:\src\ocvbuild"
+          cmake --build build --config Release -j 4
+
+      - name: ffmpeg for the smoke
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress | Out-Null
+
+      - name: smoke test (the real exe, cli one-liners + gif + mp4 + sound)
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $exe = "build\Release\imder.exe"
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2> $null
+          ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2> $null
+          if (-not (Test-Path ta.png)) { Write-Host "smoke setup FAILED"; exit 1 }
+          function Run-Imder($args) {
+            $p = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru -NoNewWindow
+            Write-Host "== run exit code $($p.ExitCode): $args"
+            return $p.ExitCode
+          }
+          Write-Host "== [1] merge one-liner (png+gif+mp4)"
+          if ((Run-Imder @("ta.png","tb.png","merge","128","mute")) -ne 0) { Write-Host "merge smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\image_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\animation_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
+          Write-Host "== [2] missform"
+          if ((Run-Imder @("ta.png","tb.png","missform","128","mute")) -ne 0) { Write-Host "missform smoke FAILED"; exit 1 }
+          Write-Host "== [3] generated sound"
+          if ((Run-Imder @("ta.png","tb.png","merge","128","sound")) -ne 0) { Write-Host "sound smoke FAILED"; exit 1 }
+          $vid = Get-ChildItem "results\video_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $probe = ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
+          Write-Host "audio stream probe: $probe"
+          Write-Host "== exe size:"
+          Get-Item $exe | Select-Object Name,Length
+          Write-Host "smoke OK"
+
+      - name: collect portable bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\imder | Out-Null
+          Copy-Item build\Release\imder.exe dist\imder\
+          Copy-Item src\imder.png dist\imder\
+          Compress-Archive -Path dist\imder -DestinationPath "IMDER_windows_v${{ inputs.version }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imder-windows-cpp
+          path: IMDER_windows_v${{ inputs.version }}.zip
+
+  linux-cpp:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev \
+            libxcb1-dev libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev libxcb-shm0-dev \
+            libxcb-icccm4-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-shape0-dev \
+            libxcb-randr0-dev libxcb-render-util0-dev libxcb-util-dev libxcb-xinerama0-dev \
+            libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev \
+            libfreetype6-dev libgl1-mesa-dev libglib2.0-dev ninja-build \
+            libunwind-dev xvfb ffmpeg
+
+      - name: cache static qt
+        id: qtcache
+        uses: actions/cache@v4
+        with:
+          path: /opt/qts
+          key: qt-5.15-static-linux-imder-v1
+
+      - name: build static qt 5.15.2 (base)
+        if: steps.qtcache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b 5.15 https://github.com/qt/qtbase /opt/src/qtbase
+          mkdir -p /opt/src/build && cd /opt/src/build
+          ../qtbase/configure -static -release -opensource -confirm-license \
+            -prefix /opt/qts -nomake examples -nomake tests -nomake tools \
+            -xcb -opengl desktop -no-openssl -no-dbus
+          make -j"$(nproc)"
+          make install
+
+      - name: cache static opencv
+        id: ocvcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/src/ocvbuild
+            /opt/src/opencv
+          key: opencv-4.10.0-static-linux-imder-v1
+
+      - name: build static opencv
+        if: steps.ocvcache.outputs.cache-hit != 'true'
+        run: |
+          if [ -f /opt/src/opencv/CMakeLists.txt ]; then echo "opencv source cached"; exit 0; fi
+          git clone --depth 1 --branch 4.10.0 https://github.com/opencv/opencv /opt/src/opencv
+          cmake -S /opt/src/opencv -B /opt/src/ocvbuild -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_LIST=core,imgproc,imgcodecs -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF \
+            -DBUILD_EXAMPLES=OFF -DBUILD_opencv_apps=OFF -DBUILD_JPEG=ON -DBUILD_PNG=ON \
+            -DBUILD_ZLIB=ON -DBUILD_WEBP=ON -DBUILD_TIFF=ON -DBUILD_OPENEXR=OFF \
+            -DBUILD_JPEG2000=OFF -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_TBB=OFF \
+            -DWITH_FFMPEG=OFF -DWITH_GTK=OFF -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DENABLE_LIBJPEG_TURBO_SIMD=OFF
+          cmake --build /opt/src/ocvbuild -j "$(nproc)"
+
+      - name: generate static plugin imports
+        run: |
+          python3 scripts/gen_plugins.py /opt/src/gen/imder_plugins.h /opt/src/qtbase linux
+          cp /opt/src/gen/imder_plugins.h src/imder_plugins.h
+
+      - name: build imder
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DQt5_DIR=/opt/qts/lib/cmake/Qt5 -DOpenCV_DIR=/opt/src/ocvbuild
+          cmake --build build -j "$(nproc)"
+
+      - name: smoke test (the real binary, cli one-liners + gif + mp4 + sound)
+        timeout-minutes: 20
+        run: |
+          command -v ffmpeg ffprobe || { echo "no ffmpeg on runner"; exit 1; }
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2>/dev/null
+          ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2>/dev/null
+          [ -f ta.png ] || { echo "smoke setup FAILED"; exit 1; }
+          echo "== [1] merge one-liner (png+gif+mp4)"
+          ./build/imder ta.png tb.png merge 128 mute
+          ls results/image_*.png > /dev/null || { echo "image smoke FAILED"; exit 1; }
+          ls results/animation_*.gif > /dev/null || { echo "gif smoke FAILED"; exit 1; }
+          ls results/video_*.mp4 > /dev/null || { echo "video smoke FAILED"; exit 1; }
+          echo "== [2] missform"
+          ./build/imder ta.png tb.png missform 128 mute
+          echo "== [3] generated sound"
+          ./build/imder ta.png tb.png merge 128 sound
+          vid=$(ls -t results/video_*.mp4 | head -1)
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$vid" | grep -q audio || { echo "audio mux smoke FAILED"; exit 1; }
+          echo "== exe size:"
+          ls -la build/imder
+          echo "smoke OK"
+
+      - name: gui startup smoke (xvfb, 8s alive)
+        timeout-minutes: 5
+        run: |
+          code=0
+          timeout 8 xvfb-run -a ./build/imder || code=$?
+          if [ $code -ne 124 ] && [ $code -ne 0 ]; then echo "gui startup smoke FAILED (exit $code)"; exit 1; fi
+          echo "gui startup OK"
+
+      - name: collect portable bundle
+        run: |
+          mkdir -p dist/imder
+          cp build/imder dist/imder/
+          cp src/imder.png dist/imder/
+          chmod +x dist/imder/imder
+          (cd dist && zip -qr ../"imder_linux_v${{ inputs.version }}_cpp.zip" imder)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imder-linux-cpp
+          path: imder_linux_v${{ inputs.version }}_cpp.zip
+
+  release:
+    needs: [windows-cpp, linux-cpp]
+    runs-on: ubuntu-latest
+    if: ${{ inputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: pkgs
+
+      - name: replace release assets in-place
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ inputs.version }}"
+          gh release upload "$TAG" \
+            "pkgs/imder-windows-cpp/IMDER_windows_v${{ inputs.version }}.zip" \
+            "pkgs/imder-linux-cpp/imder_linux_v${{ inputs.version }}_cpp.zip" \
+            --clobber
+          echo "assets on $TAG:"
+          gh api repos/$GITHUB_REPOSITORY/releases --jq ".[] | select(.tag_name==\"$TAG\") | .assets[] | \"\(.name) \(.size)\""

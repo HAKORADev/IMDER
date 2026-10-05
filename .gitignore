@@ -1,0 +1,6 @@
+build/
+dist/
+results/
+*.moc
+src/imder_plugins.h
+__pycache__/
