@@ -738,7 +738,7 @@ static QString mainBtnStyle(){return R"(
                                                                                                                         int totalFrames=cfg.fps*10;
 
                                                                                                                         time_t now2=time(nullptr);
-                                                                                                                        char ts[32];strftime(ts,sizeof(ts),"%Y%m%d_%H%M%S",&localTm(now2));
+                                                                                                                        char ts[32];std::tm tms=localTm(now2);strftime(ts,sizeof(ts),"%Y%m%d_%H%M%S",&tms);
 
                                                                                                                         if(cfg.algo=="missform"){
                                                                                                                             Missform miss(baseImg,tgtImg,127.f);
@@ -1129,7 +1129,7 @@ rd.release();
                                                                                                                                                                            }
 
                                                                                                                                                                            time_t now2=time(nullptr);char ts2[32];
-                                                                                                                                                                           strftime(ts2,sizeof(ts2),"%Y%m%d_%H%M%S",&localTm(now2));
+                                                                                                                                                                           std::tm tms2=localTm(now2);strftime(ts2,sizeof(ts2),"%Y%m%d_%H%M%S",&tms2);
                                                                                                                                                                            std::string videoPath,gifPath;
                                                                                                                                                                            gifPath=outDir+"/animation_"+ts2+".gif";
 
