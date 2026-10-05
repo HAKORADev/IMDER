@@ -57,6 +57,7 @@
 #include <thread>
 #include <chrono>
 #include <cerrno>
+#include <cstdlib>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -78,6 +79,9 @@
 static void attach_parent_console(int argc,char* argv[]){
 #ifdef _WIN32
     (void)argc;(void)argv;
+    size_t noAttachLen=0;
+    getenv_s(&noAttachLen,nullptr,0,"IMDER_NO_CONSOLE_ATTACH");
+    if(noAttachLen) return;
     if(GetConsoleWindow()!=nullptr) return;
     if(!AttachConsole(ATTACH_PARENT_PROCESS)) return;
     freopen("CONOUT$","w",stdout);

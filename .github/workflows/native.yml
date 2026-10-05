@@ -20,14 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: cache static qt
+      - name: restore static qt
         id: qtcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: D:\qts
           key: qt-5.15-static-msvc-imder-v1
 
       - name: build static qt 5.15.2 (base)
+        id: qtbuild
         if: steps.qtcache.outputs.cache-hit != 'true'
         shell: cmd
         run: |
@@ -43,9 +44,16 @@ jobs:
           "%JOM%" -j4 || exit /b 1
           "%JOM%" -j4 install || exit /b 1
 
-      - name: cache static opencv
+      - name: save static qt
+        if: always() && steps.qtcache.outputs.cache-hit != 'true' && steps.qtbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: D:\qts
+          key: qt-5.15-static-msvc-imder-v1
+
+      - name: restore static opencv
         id: ocvcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             D:\src\ocvbuild
@@ -53,6 +61,7 @@ jobs:
           key: opencv-4.10.0-static-msvc-imder-v1
 
       - name: build static opencv (core imgproc imgcodecs)
+        id: ocvbuild
         if: steps.ocvcache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
@@ -66,6 +75,15 @@ jobs:
             "-DWITH_OPENCL=OFF" "-DWITH_IPP=OFF" "-DWITH_ITT=OFF" "-DWITH_TBB=OFF" `
             "-DWITH_FFMPEG=OFF" "-DWITH_GTK=OFF" "-DWITH_OPENEXR=OFF" "-DWITH_JASPER=OFF" "-DENABLE_LIBJPEG_TURBO_SIMD=OFF"
           cmake --build D:\src\ocvbuild --config Release -j 4
+
+      - name: save static opencv
+        if: always() && steps.ocvcache.outputs.cache-hit != 'true' && steps.ocvbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            D:\src\ocvbuild
+            D:\src\opencv
+          key: opencv-4.10.0-static-msvc-imder-v1
 
       - name: generate static plugin imports
         shell: pwsh
@@ -85,37 +103,82 @@ jobs:
         shell: pwsh
         run: choco install ffmpeg -y --no-progress | Out-Null
 
-      - name: smoke test (the real exe, cli one-liners + gif + mp4 + sound)
-        timeout-minutes: 20
+      - name: smoke setup (ffmpeg inputs + real ffmpeg on PATH)
+        timeout-minutes: 5
         shell: pwsh
+        env:
+          IMDER_NO_CONSOLE_ATTACH: "1"
         run: |
           $ErrorActionPreference = "Continue"
           $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
           if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH"; Write-Host "real ffmpeg: $($real.FullName)" } else { Write-Host "no real ffmpeg dir found, using PATH" }
-          $exe = "build\Release\imder.exe"
           ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2> $null
           ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2> $null
           if (-not (Test-Path ta.png)) { Write-Host "smoke setup FAILED"; exit 1 }
-          function Run-Imder($args) {
-            $p = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru -NoNewWindow
-            Write-Host "== run exit code $($p.ExitCode): $args"
-            return $p.ExitCode
-          }
-          Write-Host "== [1] merge one-liner (png+gif+mp4)"
-          if ((Run-Imder @("ta.png","tb.png","merge","128","mute")) -ne 0) { Write-Host "merge smoke FAILED"; exit 1 }
+          Write-Host "IMDER_NO_CONSOLE_ATTACH=$env:IMDER_NO_CONSOLE_ATTACH"
+
+      - name: smoke 1 - merge one-liner (png+gif+mp4)
+        timeout-minutes: 6
+        shell: pwsh
+        env:
+          IMDER_NO_CONSOLE_ATTACH: "1"
+        run: |
+          $ErrorActionPreference = "Continue"
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128","mute") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm1.out -RedirectStandardError sm1.err
+          Write-Host "== exit code $($p.ExitCode)"
+          Write-Host "== stdout:"; Get-Content sm1.out
+          Write-Host "== stderr:"; Get-Content sm1.err
           if (-not (Test-Path "results\image_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
           if (-not (Test-Path "results\animation_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
           if (-not (Test-Path "results\video_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
-          Write-Host "== [2] missform"
-          if ((Run-Imder @("ta.png","tb.png","missform","128","mute")) -ne 0) { Write-Host "missform smoke FAILED"; exit 1 }
-          Write-Host "== [3] generated sound"
-          if ((Run-Imder @("ta.png","tb.png","merge","128","sound")) -ne 0) { Write-Host "sound smoke FAILED"; exit 1 }
+          Write-Host "smoke 1 OK"
+
+      - name: smoke 2 - missform
+        timeout-minutes: 6
+        shell: pwsh
+        env:
+          IMDER_NO_CONSOLE_ATTACH: "1"
+        run: |
+          $ErrorActionPreference = "Continue"
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","missform","128","mute") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm2.out -RedirectStandardError sm2.err
+          Write-Host "== exit code $($p.ExitCode)"
+          Write-Host "== stdout:"; Get-Content sm2.out
+          Write-Host "== stderr:"; Get-Content sm2.err
+          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "missform video smoke FAILED"; exit 1 }
+          Write-Host "smoke 2 OK"
+
+      - name: smoke 3 - generated sound + audio probe
+        timeout-minutes: 6
+        shell: pwsh
+        env:
+          IMDER_NO_CONSOLE_ATTACH: "1"
+        run: |
+          $ErrorActionPreference = "Continue"
+          $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
+          if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH" }
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128","sound") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm3.out -RedirectStandardError sm3.err
+          Write-Host "== exit code $($p.ExitCode)"
+          Write-Host "== stdout:"; Get-Content sm3.out
+          Write-Host "== stderr:"; Get-Content sm3.err
           $vid = Get-ChildItem "results\video_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          $probe = ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
+          $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
           Write-Host "audio stream probe: $probe"
-          Write-Host "== exe size:"
-          Get-Item $exe | Select-Object Name,Length
-          Write-Host "smoke OK"
+          if ("$probe" -notmatch "audio") { Write-Host "audio mux smoke FAILED"; exit 1 }
+          Write-Host "smoke 3 OK"
+
+      - name: exe size
+        shell: pwsh
+        run: Get-Item "build\Release\imder.exe" | Select-Object Name,Length
+
+      - name: dump smoke output on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          foreach ($f in ((Get-ChildItem "sm*.out" -ErrorAction SilentlyContinue) + (Get-ChildItem "sm*.err" -ErrorAction SilentlyContinue))) {
+            Write-Host "== $($f.Name)"
+            Get-Content $f.FullName
+          }
+          if (Test-Path results) { Write-Host "== results dir:"; Get-ChildItem results | ForEach-Object { Write-Host "$($_.Name) $($_.Length)" } }
 
       - name: collect portable bundle
         shell: pwsh
@@ -147,14 +210,15 @@ jobs:
             libfreetype6-dev libgl1-mesa-dev libglib2.0-dev ninja-build \
             libunwind-dev xvfb ffmpeg
 
-      - name: cache static qt
+      - name: restore static qt
         id: qtcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /opt/qts
           key: qt-5.15-static-linux-imder-v1
 
       - name: build static qt 5.15.2 (base)
+        id: qtbuild
         if: steps.qtcache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 -b 5.15 https://github.com/qt/qtbase /opt/src/qtbase
@@ -165,9 +229,16 @@ jobs:
           make -j"$(nproc)"
           make install
 
-      - name: cache static opencv
+      - name: save static qt
+        if: always() && steps.qtcache.outputs.cache-hit != 'true' && steps.qtbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: /opt/qts
+          key: qt-5.15-static-linux-imder-v1
+
+      - name: restore static opencv
         id: ocvcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             /opt/src/ocvbuild
@@ -175,6 +246,7 @@ jobs:
           key: opencv-4.10.0-static-linux-imder-v1
 
       - name: build static opencv
+        id: ocvbuild
         if: steps.ocvcache.outputs.cache-hit != 'true'
         run: |
           if [ -f /opt/src/opencv/CMakeLists.txt ]; then echo "opencv source cached"; exit 0; fi
@@ -187,6 +259,15 @@ jobs:
             -DBUILD_JPEG2000=OFF -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_TBB=OFF \
             -DWITH_FFMPEG=OFF -DWITH_GTK=OFF -DWITH_OPENEXR=OFF -DWITH_JASPER=OFF -DENABLE_LIBJPEG_TURBO_SIMD=OFF
           cmake --build /opt/src/ocvbuild -j "$(nproc)"
+
+      - name: save static opencv
+        if: always() && steps.ocvcache.outputs.cache-hit != 'true' && steps.ocvbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /opt/src/ocvbuild
+            /opt/src/opencv
+          key: opencv-4.10.0-static-linux-imder-v1
 
       - name: generate static plugin imports
         run: |
