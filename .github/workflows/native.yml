@@ -90,6 +90,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
+          $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
+          if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH"; Write-Host "real ffmpeg: $($real.FullName)" } else { Write-Host "no real ffmpeg dir found, using PATH" }
           $exe = "build\Release\imder.exe"
           ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2> $null
           ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2> $null

@@ -56,6 +56,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <cerrno>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -98,7 +99,7 @@ static FILE* openPipe(const std::string& cmd,const char* mode){
 #ifdef _WIN32
     return _popen(cmd.c_str(),mode);
 #else
-    return popen(cmd.c_str(),mode);
+    return popen(cmd.c_str(),mode[0]=='w'?"w":"r");
 #endif
 }
 
@@ -120,7 +121,7 @@ static std::tm localTm(time_t t){
     return tmv;
 }
 
-static bool checkFfmpeg(){FILE* p=openPipe("ffmpeg -version","rb");if(!p)return false;char buf[256];size_t n=fread(buf,1,sizeof(buf),p);closePipe(p);return n>0;}
+static bool checkFfmpeg(){FILE* p=openPipe("ffmpeg -version","rb");if(!p){fprintf(stderr,"[imder] ffmpeg probe: pipe failed (errno %d)\n",errno);return false;}char buf[256];size_t n=fread(buf,1,sizeof(buf),p);int rc=closePipe(p);if(n==0)fprintf(stderr,"[imder] ffmpeg probe: no output (exit %d)\n",rc);return n>0;}
 
 struct FfmpegWriter {
     FILE* p=nullptr;
@@ -129,11 +130,13 @@ struct FfmpegWriter {
         std::string cmd="ffmpeg -y -f rawvideo -pix_fmt bgr24 -s "+std::to_string(w)+"x"+std::to_string(h)+
         " -r "+std::to_string(fps)+" -i - -c:v mpeg4 -q:v 2 \""+path+"\""+outNull();
         p=openPipe(cmd.c_str(),"wb");
+        if(!p) fprintf(stderr,"[imder] video pipe failed (errno %d): %s\n",errno,cmd.c_str());
         return p!=nullptr;
     }
     bool isOpened() const {return p!=nullptr;}
-    void write(const cv::Mat& bgr){ if(p) fwrite(bgr.data,1,(size_t)bgr.total()*bgr.elemSize(),p); }
-    void release(){ if(p){ fclose(p); p=nullptr; } }
+    bool warned=false;
+    void write(const cv::Mat& bgr){ if(!p) return; size_t tot=(size_t)bgr.total()*bgr.elemSize(); if(fwrite(bgr.data,1,tot,p)!=tot&&!warned){warned=true;fprintf(stderr,"[imder] video frame write failed - ffmpeg exited early\n");} }
+    void release(){ if(p){ closePipe(p); p=nullptr; } }
 };
 
 struct FfmpegReader {
@@ -168,7 +171,7 @@ struct FfmpegReader {
         if(got!=(size_t)w*h*3) return false;
         out=frm; return true;
     }
-    void release(){ if(p){ fclose(p); p=nullptr; } }
+    void release(){ if(p){ closePipe(p); p=nullptr; } }
 };
 
 static QString mainBtnStyle(){return R"(
@@ -1170,7 +1173,9 @@ rd.release();
                                                                                                                                                                                 static const struct{const char* mode;const char* desc;} FMTS[]={
                                                                                                                                                                                     {"export_image","Frame (PNG)"},{"export_gif","GIF"},{"export_video","Animation (MP4)"}};
                                                                                                                                                                                     bool running=true;
+int passNo=0;const int passTot=(int)(sizeof(FMTS)/sizeof(FMTS[0]));
                                                                                                                                                                                     for(auto& fmt:FMTS){
+                                                                                                                                                                                        fprintf(stderr,"[imder] pass %d/%d %s\n",++passNo,passTot,fmt.mode);
                                                                                                                                                                                         ProcessConfig cfg;
                                                                                                                                                                                         cfg.basePath=basePath;cfg.tgtPath=tgtPath;
                                                                                                                                                                                         cfg.mode=fmt.mode;cfg.algo=algo;
@@ -1181,7 +1186,7 @@ rd.release();
                                                                                                                                                                                                     [&](int v){},
                                                                                                                                                                                                     [](const QImage&){},
                                                                                                                                                                                                     [&](const std::string& m){},
-                                                                                                                                                                                                    [&](const std::string& e){fprintf(stderr,"Error: %s\n",e.c_str());});
+                                                                                                                                                                                                    [&](const std::string& e){fprintf(stderr,"Error: %s\n",e.c_str());}exit(1);});
                                                                                                                                                                                     }
                                                                                                                                                                                                         }
 
