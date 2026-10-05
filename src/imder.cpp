@@ -2014,10 +2014,7 @@ QTemporaryDir drawTmp;
 
                                                                                                                                                                                                                                         int main(int argc,char* argv[]){
                                                                                                                                                                                                                                             attach_parent_console(argc,argv);
-                                                                                                                                                                                                                                            QApplication app(argc,argv);
-                                                                                                                                                                                                                                            app.setStyle("Fusion");
-
-                                                                                                                                                                                                                                            bool isCLI=false;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        bool isCLI=false;
                                                                                                                                                                                                                                             int argOffset=1;
 
                                                                                                                                                                                                                                             if(argc>1){
@@ -2087,6 +2084,8 @@ QTemporaryDir drawTmp;
                                                                                                                                                                                                                                                 return 0;
                                                                                                                                                                                                                                             }
 
+                                                                                                                                                                                                                                            QApplication app(argc,argv);
+                                                                                                                                                                                                                                            app.setStyle("Fusion");
                                                                                                                                                                                                                                             ImderGUI win;
                                                                                                                                                                                                                                             win.show();
                                                                                                                                                                                                                                             return app.exec();
