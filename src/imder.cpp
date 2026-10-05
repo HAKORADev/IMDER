@@ -1186,7 +1186,7 @@ int passNo=0;const int passTot=(int)(sizeof(FMTS)/sizeof(FMTS[0]));
                                                                                                                                                                                                     [&](int v){},
                                                                                                                                                                                                     [](const QImage&){},
                                                                                                                                                                                                     [&](const std::string& m){},
-                                                                                                                                                                                                    [&](const std::string& e){fprintf(stderr,"Error: %s\n",e.c_str());}exit(1);});
+                                                                                                                                                                                                    [&](const std::string& e){fprintf(stderr,"Error: %s\n",e.c_str());exit(1);});
                                                                                                                                                                                     }
                                                                                                                                                                                                         }
 
