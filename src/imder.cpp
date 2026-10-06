@@ -1285,6 +1285,7 @@ static void processCore(const ProcessConfig& cfg,
                 }
             }
             vw.release();
+            if(cfg.mode=="export_gif") gifEnc.close();
             finishExport(cfg,outPath,silPath,vframes,renderReborn(1.f),0,ts,outDir,&onProgress,onFinish,onError);
             return;
         }
@@ -1315,6 +1316,7 @@ static void processCore(const ProcessConfig& cfg,
                 }
             }
             vw.release();
+            if(cfg.mode=="export_gif") gifEnc.close();
             finishExport(cfg,outPath,silPath,vframes,miss.frame(1.f),0,ts,outDir,&onProgress,onFinish,onError);
             return;
         }
@@ -1450,6 +1452,7 @@ static void processCore(const ProcessConfig& cfg,
         }
 
         vw.release();
+        if(cfg.mode=="export_gif") gifEnc.close();
         finishExport(cfg,outPath,silPath,vframes,lastFrame,0,ts,outDir,&onProgress,onFinish,onError);
 
     } catch(const std::exception& ex){ onError(ex.what()); }
@@ -1655,7 +1658,7 @@ static std::vector<std::string> cliImageProcess(const std::string& basePath,cons
             [&](const std::string& m){
                 if(m.rfind("Saved to ",0)==0) outs.push_back(m.substr(9));
             },
-            [&](const std::string& e){ fprintf(stderr,"Error: %s\n",e.c_str()); exit(1); });
+            [&](const std::string& e){ throw std::runtime_error(e); });
     }
     return outs;
 }
@@ -1682,16 +1685,20 @@ static std::vector<std::string> cliProcessAndExport(const std::string& basePath,
                                                     const std::string& soundOpt,int audioQuality,bool audioHz){
     bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
     if(soundOpt=="target-sound"&&!tIsVid){
-        fprintf(stderr,"Error: Target sound requires video target\n");exit(1);
+        throw std::runtime_error("Target sound requires video target");
     }
     if(bIsVid||tIsVid){
-        if(cliHasFormat(formats,"png")){fprintf(stderr,"Error: PNG not supported for video input\n");exit(1);}
+        if(cliHasFormat(formats,"png")){
+            throw std::runtime_error("PNG not supported for video input");
+        }
         if(algo!="shuffle"&&algo!="merge"&&algo!="missform"){
-            fprintf(stderr,"Error: Video only supports: shuffle, merge, missform\n");exit(1);}
+            throw std::runtime_error("Video only supports: shuffle, merge, missform");
+        }
         return cliVideoProcess(basePath,tgtPath,outDir,formats,algo,resolution,soundOpt,audioQuality,audioHz);
     }
     if(algo!="shuffle"&&algo!="merge"&&algo!="missform"&&algo!="fusion"){
-        fprintf(stderr,"Error: Valid algorithms: shuffle, merge, missform, fusion\n");exit(1);}
+        throw std::runtime_error("Valid algorithms: shuffle, merge, missform, fusion");
+    }
     return cliImageProcess(basePath,tgtPath,outDir,formats,algo,resolution,soundOpt,audioQuality,audioHz);
 }
 
@@ -1791,6 +1798,13 @@ static void interactiveCLI(){
 
         printf("\nProcessing...\n");
         try{
+            bool wantVid=isVideoFile(basePath)||isVideoFile(tgtPath);
+            for(auto& f:formats){
+                if(f!="png"&&f!="gif"&&f!="mp4")
+                    throw std::runtime_error("Invalid format '"+f+"'. Valid: png, gif, mp4");
+            }
+            if(wantVid&&snd=="target"&&!tIsVid)
+                throw std::runtime_error("Target sound requires video target");
             std::string soundOpt=snd=="gen"?"sound":(snd=="target"?"target-sound":"mute");
             auto files=cliProcessAndExport(basePath,tgtPath,outDir,formats,algo,res,soundOpt,
                                            sndChoice.quality,sndChoice.hz);
