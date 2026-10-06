@@ -91,8 +91,8 @@ IMDER offers 11 distinct pixel manipulation algorithms, each designed for specif
 | **Navigate** | Morton curve-guided pixel movement | Yes | ❌ No |
 | **Swap** | Bidirectional pixel exchange | Yes | ❌ No |
 | **Blend** | Physics-inspired fluid dynamics | Yes | ❌ No |
-| **Reborn** | Shape-pair pixel transplant — drawn base shapes morph to look like the matched target shapes | Both sides | ❌ No |
-| **Drawer** | Canvas-based sketch to image transformation | N/A | ❌ No |
+| **Reborn** | Shape-pair Merge — the base shape's pixels leave a black/empty background and resort inside the matched target shape to rebuild its look | Both sides | ✅ Yes |
+| **Drawer** | Canvas-based sketch to image transformation | N/A | ✅ Yes |
 
 ### 🎬 **Video Processing**
 
@@ -266,16 +266,16 @@ See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 4. Set FPS for image-image animation exports (30/60/90/120/240)
 5. Load base and target media (images or videos)
 6. Apply transforms (rotate/flip) on images if needed
-7. Pick sound (Mute / Sound / Target Sound) with a quality level for video exports
+7. Pick sound (Mute / Sound / Target Sound) with a quality level for video exports — Target Sound is smart and falls back to pixel-sounds when the target carries no audio
 8. For mask-dependent algorithms, use "Analyze" (As-is or Smart) or the Pen tool (+/- shapes, Clear Shapes)
-9. For Reborn mode, draw and analyze at least one shape on the Base and one on the Target
+9. For Reborn mode, draw and analyze at least one shape on the Base and one on the Target (videos draw on their first frame)
 10. Click "Start Processing" for the streamed live preview — the frame timeline tracks and scrubs the run
 11. Replay the cached run like a normal video (forward or reverse), then export (PNG/MP4/GIF)
 
 **Drawer Mode Workflow:**
 1. Select "Drawer" from mode dropdown
 2. Draw on canvas using mouse/tablet
-3. Load target image in right panel
+3. Load a target image or video in right panel
 4. Process to see drawing transform into target
 
 ### CLI Mode (Native Binary)

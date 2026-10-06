@@ -109,30 +109,6 @@ static void attach_parent_console(int argc,char* argv[]){
 #endif
 }
 
-static std::string outNull(){
-#ifdef _WIN32
-    return " > NUL 2>&1";
-#else
-    return " >/dev/null 2>&1";
-#endif
-}
-
-static FILE* openPipe(const std::string& cmd,const char* mode){
-#ifdef _WIN32
-    return _popen(cmd.c_str(),mode);
-#else
-    return popen(cmd.c_str(),mode[0]=='w'?"w":"r");
-#endif
-}
-
-static int closePipe(FILE* p){
-#ifdef _WIN32
-    return _pclose(p);
-#else
-    return pclose(p);
-#endif
-}
-
 static std::tm localTm(time_t t){
     std::tm tmv{};
 #ifdef _WIN32
@@ -370,7 +346,16 @@ private:
     }
 };
 
-static bool checkFfmpeg(){FILE* p=openPipe("ffmpeg -version","rb");if(!p){fprintf(stderr,"[imder] ffmpeg probe: pipe failed (errno %d)\n",errno);return false;}char buf[256];size_t n=fread(buf,1,sizeof(buf),p);int rc=closePipe(p);if(n==0)fprintf(stderr,"[imder] ffmpeg probe: no output (exit %d)\n",rc);return n>0;}
+static bool checkFfmpeg(){Proc p;if(!p.spawn({"ffmpeg","-version"},true,false,true)){fprintf(stderr,"[imder] ffmpeg probe: spawn failed (errno %d)\n",errno);return false;}char buf[256];size_t n=fread(buf,1,sizeof(buf),p.out);int rc=p.wait_close();if(n==0)fprintf(stderr,"[imder] ffmpeg probe: no output (exit %d)\n",rc);return n>0;}
+
+static bool hasAudioStream(const std::string& path){
+    Proc p;
+    if(!p.spawn({"ffprobe","-v","quiet","-select_streams","a:0","-show_entries","stream=codec_type","-of","csv=p=0",path},true,false,true)) return false;
+    char buf[256]={0};
+    size_t n=fread(buf,1,sizeof(buf)-1,p.out);
+    p.wait_close();
+    return n>0&&strstr(buf,"audio")!=nullptr;
+}
 
 struct VideoInfo {
     bool ok=false;
@@ -382,12 +367,11 @@ struct VideoInfo {
 
 static VideoInfo probeVideoInfo(const std::string& path){
     VideoInfo vi;
-    std::string cmd="ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,r_frame_rate -show_entries format=duration -of csv=p=0 \""+path+"\"";
-    FILE* pr=openPipe(cmd.c_str(),"rb");
-    if(!pr) return vi;
+    Proc pr;
+    if(!pr.spawn({"ffprobe","-v","quiet","-select_streams","v:0","-show_entries","stream=width,height,r_frame_rate","-show_entries","format=duration","-of","csv=p=0",path},true,false,true)) return vi;
     char buf[1024]={0};
-    size_t n=fread(buf,1,sizeof(buf)-1,pr);
-    closePipe(pr);
+    size_t n=fread(buf,1,sizeof(buf)-1,pr.out);
+    pr.wait_close();
     if(n==0) return vi;
     double dur=0.0;
     char* nl=strchr(buf,'\n');
@@ -411,36 +395,41 @@ static VideoInfo probeVideoInfo(const std::string& path){
 }
 
 struct FfmpegWriter {
-    FILE* p=nullptr;
+    Proc* proc=nullptr;
+    bool warned=false;
     bool open(const std::string& path,int w,int h,double fps){
         if(!checkFfmpeg()) return false;
-        std::string cmd="ffmpeg -y -f rawvideo -pix_fmt bgr24 -s "+std::to_string(w)+"x"+std::to_string(h)+
-        " -r "+std::to_string(fps)+" -i - -c:v mpeg4 -q:v 2 \""+path+"\""+outNull();
-        p=openPipe(cmd.c_str(),"wb");
-        if(!p) fprintf(stderr,"[imder] video pipe failed (errno %d): %s\n",errno,cmd.c_str());
-        return p!=nullptr;
+        proc=new Proc();
+        if(!proc->spawn({"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y","-f","rawvideo","-pix_fmt","bgr24","-s",std::to_string(w)+"x"+std::to_string(h),
+        "-r",std::to_string(fps),"-i","-","-c:v","mpeg4","-q:v","2",path},false,true,true)){
+            fprintf(stderr,"[imder] video pipe failed (errno %d)\n",errno);
+            delete proc;proc=nullptr;
+            return false;
+        }
+        return true;
     }
-    bool isOpened() const {return p!=nullptr;}
-    bool warned=false;
-    void write(const cv::Mat& bgr){ if(!p) return; size_t tot=(size_t)bgr.total()*bgr.elemSize(); if(fwrite(bgr.data,1,tot,p)!=tot&&!warned){warned=true;fprintf(stderr,"[imder] video frame write failed - ffmpeg exited early\n");} }
-    void release(){ if(p){ closePipe(p); p=nullptr; } }
+    bool isOpened() const {return proc!=nullptr;}
+    void write(const cv::Mat& bgr){ if(!proc||!proc->in) return; size_t tot=(size_t)bgr.total()*bgr.elemSize(); if(fwrite(bgr.data,1,tot,proc->in)!=tot&&!warned){warned=true;fprintf(stderr,"[imder] video frame write failed - ffmpeg exited early\n");} }
+    void release(){ if(proc){ if(proc->in){std::fclose(proc->in);proc->in=nullptr;} proc->wait_close(); std::string err=proc->stderr_tail(); if(!err.empty()) fprintf(stderr,"[imder] ffmpeg writer: %s\n",err.c_str()); delete proc; proc=nullptr; } }
 };
 
 struct FfmpegReader {
-    FILE* p=nullptr;
+    Proc* proc=nullptr;
     int w=0,h=0;
     double fps=30.0;
     bool open(const std::string& path){
         if(!probeMeta(path)) return false;
-        std::string cmd="ffmpeg -v quiet -i \""+path+"\" -f rawvideo -pix_fmt bgr24 -";
-        p=openPipe(cmd.c_str(),"rb");
-        return p!=nullptr;
+        proc=new Proc();
+        if(!proc->spawn({"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-i",path,"-f","rawvideo","-pix_fmt","bgr24","-"},true,false,true)){
+            delete proc;proc=nullptr;
+            return false;
+        }
+        return true;
     }
     bool probeMeta(const std::string& path){
-        std::string cmd="ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 \""+path+"\"";
-        FILE* pr=openPipe(cmd.c_str(),"rb");
-        if(!pr) return false;
-        char buf[512]={0}; size_t n=fread(buf,1,sizeof(buf)-1,pr); closePipe(pr);
+        Proc pr;
+        if(!pr.spawn({"ffprobe","-v","quiet","-select_streams","v:0","-show_entries","stream=width,height,r_frame_rate","-of","csv=p=0",path},true,false,true)) return false;
+        char buf[512]={0}; size_t n=fread(buf,1,sizeof(buf)-1,pr.out); pr.wait_close();
         if(n==0) return false;
         int iw=0,ih=0; char rate[64]={0};
         if(sscanf(buf,"%d,%d,%63s",&iw,&ih,rate)!=3) return false;
@@ -452,13 +441,13 @@ struct FfmpegReader {
         return true;
     }
     bool read(cv::Mat& out){
-        if(!p) return false;
+        if(!proc||!proc->out) return false;
         cv::Mat frm(h,w,CV_8UC3);
-        size_t got=fread(frm.data,1,(size_t)w*h*3,p);
+        size_t got=fread(frm.data,1,(size_t)w*h*3,proc->out);
         if(got!=(size_t)w*h*3) return false;
         out=frm; return true;
     }
-    void release(){ if(p){ closePipe(p); p=nullptr; } }
+    void release(){ if(proc){ delete proc; proc=nullptr; } }
 };
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -488,13 +477,12 @@ static cv::Mat decodeWithStb(const std::string& path){
 static cv::Mat decodeWithFfmpeg(const std::string& path){
     VideoInfo vi=probeVideoInfo(path);
     if(!vi.ok) return cv::Mat();
-    std::string cmd="ffmpeg -v quiet -i \""+path+"\" -frames:v 1 -f rawvideo -pix_fmt bgr24 -";
-    FILE* p=openPipe(cmd.c_str(),"rb");
-    if(!p) return cv::Mat();
+    Proc p;
+    if(!p.spawn({"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-i",path,"-frames:v","1","-f","rawvideo","-pix_fmt","bgr24","-"},true,false,true)) return cv::Mat();
     cv::Mat m(vi.h,vi.w,CV_8UC3);
     size_t need=(size_t)vi.w*vi.h*3;
-    size_t got=fread(m.data,1,need,p);
-    closePipe(p);
+    size_t got=fread(m.data,1,need,p.out);
+    p.wait_close();
     if(got!=need) return cv::Mat();
     return m;
 }
@@ -702,16 +690,20 @@ static bool writeWav(const std::string& path,const std::vector<int16_t>& s,int s
 static bool extractAudio(const std::string& vid,const std::string& out,double dur,int quality,bool isHz=false){
     if(!checkFfmpeg()){printf("Error: ffmpeg is not installed or not found in PATH. Cannot extract audio.\n");return false;}
     const char* qmap[]={"32k","64k","96k","128k","160k","192k","224k","256k","320k","copy"};
-    std::string cmd="ffmpeg -i \""+vid+"\"";
-    if(dur>0) cmd+=" -t "+std::to_string(dur);
-    if(isHz) cmd+=" -ar "+std::to_string(quality);
+    std::vector<std::string> av={"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-i",vid};
+    if(dur>0){av.push_back("-t");av.push_back(std::to_string(dur));}
+    if(isHz){av.push_back("-ar");av.push_back(std::to_string(quality));}
     else{
         int qi=quality/10-1; if(qi<0)qi=0; if(qi>9)qi=9;
-        if(std::string(qmap[qi])=="copy") cmd+=" -c:a copy";
-        else cmd+=" -b:a "+std::string(qmap[qi]);
+        if(std::string(qmap[qi])=="copy"){av.push_back("-c:a");av.push_back("copy");}
+        else{av.push_back("-b:a");av.push_back(qmap[qi]);}
     }
-    cmd+=" -y \""+out+"\""+outNull();
-    return system(cmd.c_str())==0;
+    av.push_back("-y");av.push_back(out);
+    Proc p;
+    if(!p.spawn(av,false,false,true)){fprintf(stderr,"[imder] audio extract: spawn failed (errno %d)\n",errno);return false;}
+    int rc=p.wait_close();
+    if(rc!=0){std::string t=p.stderr_tail();fprintf(stderr,"[imder] audio extract failed (exit %d)%s%s\n",rc,t.empty()?"":": ",t.c_str());}
+    return rc==0;
 }
 
 static void genSoundForFrame(const cv::Mat& rgbFrame,double frameDur,
@@ -740,12 +732,17 @@ static void genSoundForFrame(const cv::Mat& rgbFrame,double frameDur,
 static std::string audioMux(const std::string& videoPath,const std::string& audioPath,
                             const std::string& outPath){
     printf("\nMerging audio with video...\n");
-    std::string cmd="ffmpeg -i \""+videoPath+"\" -i \""+audioPath+
-    "\" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -y \""+
-    outPath+"\""+outNull();
+    Proc p;
+    bool spawned=p.spawn({"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-i",videoPath,"-i",audioPath,
+    "-c:v","copy","-c:a","aac","-map","0:v:0","-map","1:a:0","-shortest","-y",
+    outPath},false,false,true);
     printf("Merging audio with video using ffmpeg...\n");
     fflush(stdout);
-    if(system(cmd.c_str())!=0){printf("Error adding audio.\n");return videoPath;}
+    int rc=spawned?p.wait_close():-1;
+    if(!spawned||rc!=0){
+        if(spawned){std::string t=p.stderr_tail();fprintf(stderr,"[imder] audio mux failed (exit %d)%s%s\n",rc,t.empty()?"":": ",t.c_str());}
+        printf("Error adding audio.\n");return videoPath;
+    }
     size_t d=outPath.find_last_of("/\\");
     printf("Successfully added sound to video: %s\n",(d==std::string::npos?outPath:outPath.substr(d+1)).c_str());
     return outPath;
@@ -765,11 +762,16 @@ static std::string addAudioToVideoFrames(const std::string& videoPath,
     std::string tmpPath=tmpDir.path().toStdString();
     std::string audioPath=tmpPath+"/audio.mp3";
 
-    if(soundOpt=="target-sound"&&!targetAudioPath.empty()){
+    bool useTarget=(soundOpt=="target-sound")&&!targetAudioPath.empty()&&hasAudioStream(targetAudioPath);
+    if(soundOpt=="target-sound"&&!useTarget){
+        printf("Target has no audio, generating sound from pixels instead.\n");
+        fflush(stdout);
+    }
+    if(useTarget){
         double dur=frameCount>0?(double)frameCount/fps:0.0;
         if(!extractAudio(targetAudioPath,audioPath,dur,audioQuality,audioHz)) return videoPath;
         printf("Using target video audio with %d%% quality\n",audioQuality);
-    } else if(soundOpt=="sound"){
+    } else if(soundOpt=="sound"||soundOpt=="target-sound"){
         int sr=44100; double fd=1.0/fps;
         std::vector<int16_t> full;
         full.reserve(frameCount>0?(size_t)frameCount*(size_t)(sr*fd+1):0);
@@ -828,11 +830,15 @@ namespace GIF {
         void close() {
             if (written == 0) return;
             double fps = 1000.0 / std::max(10, delayMs);
-            std::string cmd = "ffmpeg -y -framerate " + std::to_string(fps) +
-            " -i \"" + tmpDir.path().toStdString() + "/frame_%d.png\"" +
-            " -vf \"scale=" + std::to_string(w) + ":" + std::to_string(h) + ":flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse\"" +
-            " -loop 0 \"" + outputPath + "\"" + outNull();
-            system(cmd.c_str());
+            Proc p;
+            if(!p.spawn({"ffmpeg","-nostdin","-hide_banner","-loglevel","error","-y","-framerate",std::to_string(fps),
+            "-i",tmpDir.path().toStdString()+"/frame_%d.png",
+            "-vf","scale="+std::to_string(w)+":"+std::to_string(h)+":flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+            "-loop","0",outputPath},false,false,true)){
+                fprintf(stderr,"[imder] gif encode: spawn failed (errno %d)\n",errno);return;
+            }
+            int rc=p.wait_close();
+            if(rc!=0){std::string t=p.stderr_tail();fprintf(stderr,"[imder] gif encode failed (exit %d)%s%s\n",rc,t.empty()?"":": ",t.c_str());}
         }
     };
 }
@@ -1079,6 +1085,40 @@ static std::vector<int32_t> assignDrawerPixels(const cv::Mat& baseRGB,const cv::
     return asgn;
 }
 
+struct RebornMatch {
+    std::vector<int> sy,sx,ey,ex;
+    std::vector<std::array<float,3>> sc;
+};
+
+static RebornMatch matchRebornShapes(const cv::Mat& baseRGB,const cv::Mat& tgtRGB,
+                                     const cv::Mat& bm,const cv::Mat& tm){
+    RebornMatch rp;
+    int H=baseRGB.rows,W=baseRGB.cols;
+    std::vector<int> bIdx,tIdx;
+    for(int y=0;y<H;y++)for(int x=0;x<W;x++){
+        if(bm.at<uint8_t>(y,x)>0) bIdx.push_back(y*W+x);
+        if(tm.at<uint8_t>(y,x)>0) tIdx.push_back(y*W+x);
+    }
+    if(bIdx.empty()||tIdx.empty()) return rp;
+    const uint8_t* bp=baseRGB.data;
+    std::vector<float> bg(bIdx.size());
+    for(int i=0;i<(int)bIdx.size();i++) bg[i]=(bp[bIdx[i]*3]+bp[bIdx[i]*3+1]+bp[bIdx[i]*3+2])/3.f;
+    auto bs=argsortF(bg);
+    const uint8_t* tp=tgtRGB.data;
+    std::vector<float> tg(tIdx.size());
+    for(int i=0;i<(int)tIdx.size();i++) tg[i]=(tp[tIdx[i]*3]+tp[tIdx[i]*3+1]+tp[tIdx[i]*3+2])/3.f;
+    auto ts=argsortF(tg);
+    int bn=(int)bIdx.size(),tn=(int)tIdx.size();
+    for(int i=0;i<bn;i++){
+        int src=bIdx[bs[i]];
+        int dst=tIdx[ts[std::min(i,tn-1)]];
+        rp.sy.push_back(src/W);rp.sx.push_back(src%W);
+        rp.ey.push_back(dst/W);rp.ex.push_back(dst%W);
+        rp.sc.push_back({bp[src*3+0]*1.f,bp[src*3+1]*1.f,bp[src*3+2]*1.f});
+    }
+    return rp;
+}
+
 class Missform {
 public:
     int H,W,minP=0;
@@ -1239,41 +1279,13 @@ static void processCore(const ProcessConfig& cfg,
         if(cfg.algo=="reborn"){
             size_t pairs=std::min(cfg.baseShapeMasks.size(),cfg.tgtShapeMasks.size());
             onProgress(2,"matching shapes (reborn)");
-            struct RPair{ std::vector<int> sy,sx,ey,ex; std::vector<std::array<float,3>> sc,tc; };
-            std::vector<RPair> matched;
+            std::vector<RebornMatch> matched;
             for(size_t k=0;k<pairs;k++){
                 cv::Mat bm,tm;
                 cv::resize(cfg.baseShapeMasks[k],bm,cv::Size(W,H),0,0,cv::INTER_NEAREST);
                 cv::resize(cfg.tgtShapeMasks[k],tm,cv::Size(W,H),0,0,cv::INTER_NEAREST);
-                std::vector<int> by,bx,ty,tx;
-                for(int y=0;y<H;y++)for(int x=0;x<W;x++){
-                    if(bm.at<uint8_t>(y,x)>0){by.push_back(y);bx.push_back(x);}
-                    if(tm.at<uint8_t>(y,x)>0){ty.push_back(y);tx.push_back(x);}
-                }
-                if(by.empty()||ty.empty()) continue;
-                size_t bn=by.size(),tn2=ty.size();
-                std::vector<uint32_t> bk(bn),tk(tn2);
-                for(size_t i=0;i<bn;i++){const uint8_t* p=baseImg.data+(by[i]*W+bx[i])*3;bk[i]=morton3(p[0],p[1],p[2]);}
-                for(size_t i=0;i<tn2;i++){const uint8_t* p=tgtImg.data+(ty[i]*W+tx[i])*3;tk[i]=morton3(p[0],p[1],p[2]);}
-                std::vector<int> bidx(bn);std::iota(bidx.begin(),bidx.end(),0);
-                std::sort(bidx.begin(),bidx.end(),[&](int a,int b){return bk[a]<bk[b];});
-                std::vector<int> tidx(tn2);std::iota(tidx.begin(),tidx.end(),0);
-                std::sort(tidx.begin(),tidx.end(),[&](int a,int b){return tk[a]<tk[b];});
-                int m=(int)std::min(bn,tn2);
-                double bcx=0,bcy=0,tcx2=0,tcy2=0;
-                for(int i=0;i<m;i++){bcx+=bx[bidx[i]];bcy+=by[bidx[i]];tcx2+=tx[tidx[i]];tcy2+=ty[tidx[i]];}
-                bcx/=m;bcy/=m;tcx2/=m;tcy2/=m;
-                RPair rp;
-                for(int i=0;i<m;i++){
-                    const uint8_t* sp=baseImg.data+(by[bidx[i]]*W+bx[bidx[i]])*3;
-                    const uint8_t* tp2=tgtImg.data+(ty[tidx[i]]*W+tx[tidx[i]])*3;
-                    int ex=std::clamp((int)std::lround(bcx+((double)tx[tidx[i]]-tcx2)),0,W-1);
-                    int ey=std::clamp((int)std::lround(bcy+((double)ty[tidx[i]]-tcy2)),0,H-1);
-                    rp.sy.push_back(by[bidx[i]]);rp.sx.push_back(bx[bidx[i]]);
-                    rp.ey.push_back(ey);rp.ex.push_back(ex);
-                    rp.sc.push_back({sp[0]*1.f,sp[1]*1.f,sp[2]*1.f});
-                    rp.tc.push_back({tp2[0]*1.f,tp2[1]*1.f,tp2[2]*1.f});
-                }
+                RebornMatch rp=matchRebornShapes(baseImg,tgtImg,bm,tm);
+                if(rp.sy.empty()) continue;
                 matched.push_back(std::move(rp));
             }
             if(matched.empty()) throw std::runtime_error("Reborn found no drawable shape pairs.");
@@ -1283,17 +1295,16 @@ static void processCore(const ProcessConfig& cfg,
             std::vector<cv::Mat> vframes;
             openExporters(cfg,W,H,ts,outDir,outPath,silPath,vw,gifEnc);
             auto renderReborn=[&](float progress){
-                cv::Mat frm=baseImg.clone();
+                cv::Mat frm(H,W,CV_8UC3,cv::Scalar(0,0,0));
                 float t=progress*progress*(3.f-2.f*progress);
                 for(auto& rp:matched)
                     for(size_t i=0;i<rp.sy.size();i++){
-                        int cy=(int)(rp.sy[i]+(rp.ey[i]-rp.sy[i])*t);
-                        int cx=(int)(rp.sx[i]+(rp.ex[i]-rp.sx[i])*t);
-                        cy=std::clamp(cy,0,H-1);cx=std::clamp(cx,0,W-1);
+                        int cy=std::clamp((int)(rp.sy[i]+(rp.ey[i]-rp.sy[i])*t),0,H-1);
+                        int cx=std::clamp((int)(rp.sx[i]+(rp.ex[i]-rp.sx[i])*t),0,W-1);
                         uint8_t* p=frm.data+(cy*W+cx)*3;
-                        p[0]=(uint8_t)std::clamp(rp.sc[i][0]+(rp.tc[i][0]-rp.sc[i][0])*t,0.f,255.f);
-                        p[1]=(uint8_t)std::clamp(rp.sc[i][1]+(rp.tc[i][1]-rp.sc[i][1])*t,0.f,255.f);
-                        p[2]=(uint8_t)std::clamp(rp.sc[i][2]+(rp.tc[i][2]-rp.sc[i][2])*t,0.f,255.f);
+                        p[0]=(uint8_t)std::clamp(rp.sc[i][0],0.f,255.f);
+                        p[1]=(uint8_t)std::clamp(rp.sc[i][1],0.f,255.f);
+                        p[2]=(uint8_t)std::clamp(rp.sc[i][2],0.f,255.f);
                     }
                 return frm;
             };
@@ -1526,6 +1537,34 @@ struct VideoStreamResult {
     std::string mp4Path,gifPath;
 };
 
+static cv::Mat rebornEndFrame(const cv::Mat& baseBGR,const cv::Mat& tgtBGR,
+                              const std::vector<cv::Mat>& baseShapeMasks,
+                              const std::vector<cv::Mat>& tgtShapeMasks,int resolution){
+    int limitRes=std::min({baseBGR.rows,baseBGR.cols,tgtBGR.rows,tgtBGR.cols});
+    int procRes=std::min(resolution,limitRes);
+    if(procRes<1) procRes=1;
+    cv::Mat base,tgt;
+    cv::resize(baseBGR,base,cv::Size(procRes,procRes));
+    cv::resize(tgtBGR,tgt,cv::Size(procRes,procRes));
+    cv::cvtColor(base,base,cv::COLOR_BGR2RGB);
+    cv::cvtColor(tgt,tgt,cv::COLOR_BGR2RGB);
+    cv::Mat frm(procRes,procRes,CV_8UC3,cv::Scalar(0,0,0));
+    size_t pairs=std::min(baseShapeMasks.size(),tgtShapeMasks.size());
+    for(size_t k=0;k<pairs;k++){
+        cv::Mat bm,tm;
+        cv::resize(baseShapeMasks[k],bm,cv::Size(procRes,procRes),0,0,cv::INTER_NEAREST);
+        cv::resize(tgtShapeMasks[k],tm,cv::Size(procRes,procRes),0,0,cv::INTER_NEAREST);
+        RebornMatch rp=matchRebornShapes(base,tgt,bm,tm);
+        for(size_t i=0;i<rp.ey.size();i++){
+            uint8_t* p=frm.data+(rp.ey[i]*procRes+rp.ex[i])*3;
+            p[0]=(uint8_t)std::clamp(rp.sc[i][0],0.f,255.f);
+            p[1]=(uint8_t)std::clamp(rp.sc[i][1],0.f,255.f);
+            p[2]=(uint8_t)std::clamp(rp.sc[i][2],0.f,255.f);
+        }
+    }
+    return frm;
+}
+
 static void processVideoStream(const std::string& basePath,const std::string& tgtPath,
                                const std::string& algo,int resolution,
                                const std::string& soundOpt,int audioQuality,bool audioHz,
@@ -1533,9 +1572,13 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
                                const std::function<void(int,const std::string&)>& onProgress,
                                const std::function<void(const cv::Mat&,int)>& onFrameData,
                                const std::function<void(int)>& onTotal,
-                               const bool* running,VideoStreamResult& result)
+                               const bool* running,VideoStreamResult& result,
+                               const std::vector<cv::Mat>& baseShapeMasks=std::vector<cv::Mat>(),
+                               const std::vector<cv::Mat>& tgtShapeMasks=std::vector<cv::Mat>())
 {
     if(algo=="fusion") throw std::runtime_error("Fusion algorithm cannot be used with video files.");
+    if(algo=="reborn"&&(baseShapeMasks.empty()||tgtShapeMasks.empty()))
+        throw std::runtime_error("Reborn mode requires analyzed shapes on both base and target.");
 
     QDir().mkpath(QString::fromStdString(outDir));
     bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
@@ -1597,7 +1640,8 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
         if(tIsVid&&!rdT.read(tF)) break;
         cv::Mat& bUse=bIsVid?bF:bImg;
         cv::Mat& tUse=tIsVid?tF:tImg;
-        cv::Mat proc=processFramePair(bUse,tUse,algo,resolution);
+        cv::Mat proc=(algo=="reborn")?rebornEndFrame(bUse,tUse,baseShapeMasks,tgtShapeMasks,resolution)
+                                     :processFramePair(bUse,tUse,algo,resolution);
         if(wantMp4){
             cv::Mat bgr;cv::cvtColor(proc,bgr,cv::COLOR_RGB2BGR);
             vw.write(bgr);
@@ -2098,7 +2142,7 @@ protected:
                                    [this](int pct,const std::string& st){ emit progressSignal(pct,QString::fromStdString(st)); },
                                    cfg.onFrameData,
                                    [this](int t){ emit totalSignal(t); },
-                                   cfg.running,r);
+                                   cfg.running,r,cfg.baseShapeMasks,cfg.tgtShapeMasks);
                 if(wantMp4) emit finishedSignal(QString::fromStdString("Saved to "+r.mp4Path));
                 else if(wantGif) emit finishedSignal(QString::fromStdString("Saved to "+r.gifPath));
                 else emit finishedSignal("Preview finished");
@@ -2400,7 +2444,7 @@ public slots:
         if(drawerMode&&drawingCanvas) _reloadDrawerBase();
     }
     void onAnalyzeClicked(){
-        if(filePath.isEmpty()||isVideo) return;
+        if(filePath.isEmpty()) return;
         bool hasPen=!shapes.empty()||!currentShape.empty();
         if(!hasPen){ analyzeShapes(); return; }
         QMenu m;
@@ -2413,7 +2457,7 @@ public slots:
         m.exec(QCursor::pos());
     }
     void analyzeShapes(){
-        if(filePath.isEmpty()||isVideo) return;
+        if(filePath.isEmpty()) return;
         try{
             if(!penMode.isEmpty()&&(!shapes.empty()||!currentShape.empty())){
                 if(!currentShape.empty()){
@@ -2447,7 +2491,7 @@ public slots:
         }catch(const std::exception& e){ QMessageBox::warning(this,"Analysis Error",e.what()); }
     }
     void analyzeSmart(){
-        if(filePath.isEmpty()||isVideo) return;
+        if(filePath.isEmpty()) return;
         try{
             if(!currentShape.empty()){
                 shapes.push_back({currentShape,penMode=="plus"});
@@ -2528,10 +2572,10 @@ public slots:
         updatePreview();
     }
     void onPreviewDrawn(int x,int y){
-        if(!penMode.isEmpty()&&!isVideo){ currentShape.push_back({x,y}); updatePreview(); }
+        if(!penMode.isEmpty()){ currentShape.push_back({x,y}); updatePreview(); }
     }
     void onShapeCompleted(){
-        if(!penMode.isEmpty()&&!isVideo&&!currentShape.empty()){
+        if(!penMode.isEmpty()&&!currentShape.empty()){
             shapes.push_back({currentShape,penMode=="plus"});
             currentShape.clear();
             infoLbl->setText(QString("Shape %1 completed. Draw another or click Analyze.").arg((int)shapes.size()));
@@ -2579,7 +2623,7 @@ public slots:
     }
 
     cv::Mat composeMask(){
-        if(filePath.isEmpty()||isVideo) return cv::Mat();
+        if(filePath.isEmpty()) return cv::Mat();
         cv::Mat img=readImageSafe(filePath.toStdString());
         if(img.empty()) return cv::Mat();
         int h=img.rows,w=img.cols;
@@ -2617,7 +2661,7 @@ public slots:
 
     std::vector<cv::Mat> getShapeMasks(){
         std::vector<cv::Mat> out;
-        if(filePath.isEmpty()||isVideo) return out;
+        if(filePath.isEmpty()) return out;
         cv::Mat img=readImageSafe(filePath.toStdString());
         if(img.empty()) return out;
         int h=img.rows,w=img.cols;
@@ -2687,7 +2731,7 @@ public slots:
                 if(img.empty()){infoLbl->setText("Error loading image");return;}
                 img=applyTransforms(img,rotateSteps,isFlipped);
             }
-            if(!isVideo&&isAnalyzing){
+            if(isAnalyzing){
                 if(!manualMask.empty()){
                     cv::Mat viz=img.clone();
                     cv::Mat overlay=cv::Mat::zeros(img.size(),img.type());
@@ -2718,7 +2762,7 @@ public slots:
                     img=viz;
                 }
             }
-            if(!isVideo&&(!penMode.isEmpty())&&(!shapes.empty()||!currentShape.empty())){
+            if((!penMode.isEmpty())&&(!shapes.empty()||!currentShape.empty())){
                 cv::Mat viz=img.clone();
                 for(auto& sh:shapes){
                     if((int)sh.pts.size()>=2){
@@ -2884,6 +2928,7 @@ public:
         soundCombo=new QComboBox();
         soundCombo->addItems({"Mute","Sound","Target Sound"});
         soundCombo->setStyleSheet(comboStyle()); soundCombo->setMinimumWidth(90);
+        soundCombo->setToolTip("Target Sound uses the target video's audio when it carries one, and falls back to pixel-sounds when it doesn't.");
         tuneComboPopup(soundCombo);
         auto* qLbl=new QLabel("Quality:"); qLbl->setStyleSheet(subtitleLblStyle());
         qualityCombo=new QComboBox();
@@ -3013,14 +3058,14 @@ public slots:
     void updateModeAvailability(){
         bool hasB=!basePanel->filePath.isEmpty(),hasT=!targetPanel->filePath.isEmpty();
         bool anyVid=basePanel->isVideo||targetPanel->isVideo;
-        static const QStringList imageOnly={"Fusion","Pattern","Disguise","Navigate","Swap","Blend","Reborn"};
+        static const QStringList imageOnly={"Fusion","Pattern","Disguise","Navigate","Swap","Blend"};
         for(int r=0;r<modeModel->rowCount();r++){
             auto* it=modeModel->item(r);
             QString name=it->text();
             bool ok=true;
             if(hasB&&hasT){
                 if(anyVid&&imageOnly.contains(name)) ok=false;
-                if(name=="Drawer"&&targetPanel->isVideo) ok=false;
+                if(name=="Drawer"&&basePanel->isVideo) ok=false;
             }
             it->setEnabled(ok);
             if(!ok&&modeCombo->currentText()==name){
@@ -3047,10 +3092,10 @@ public slots:
         } else if(mode=="reborn"){
             basePanel->setDrawerMode(false);
             targetPanel->setEnabled(!basePanel->filePath.isEmpty());
-            basePanel->analyzeBtn->setVisible(!basePanel->isVideo&&!basePanel->filePath.isEmpty());
-            basePanel->penBtn->setVisible(!basePanel->isVideo&&!basePanel->filePath.isEmpty());
-            targetPanel->analyzeBtn->setVisible(!targetPanel->isVideo&&!targetPanel->filePath.isEmpty());
-            targetPanel->penBtn->setVisible(!targetPanel->isVideo&&!targetPanel->filePath.isEmpty());
+            basePanel->analyzeBtn->setVisible(!basePanel->filePath.isEmpty());
+            basePanel->penBtn->setVisible(!basePanel->filePath.isEmpty());
+            targetPanel->analyzeBtn->setVisible(!targetPanel->filePath.isEmpty());
+            targetPanel->penBtn->setVisible(!targetPanel->filePath.isEmpty());
         } else {
             basePanel->setDrawerMode(false);
             targetPanel->setEnabled(!basePanel->filePath.isEmpty());
@@ -3097,10 +3142,6 @@ public slots:
         QString mode=modeCombo->currentText().toLower();
         if(mode=="drawer") return !targetPanel->filePath.isEmpty();
         if(basePanel->filePath.isEmpty()||targetPanel->filePath.isEmpty()) return false;
-        if(soundCombo->currentText()=="Target Sound"&&!targetPanel->isVideo){
-            QMessageBox::warning(this,"Sound Option","Target sound requires a video target.");
-            return false;
-        }
         static const QStringList needShape={"pattern","disguise","navigate","swap","blend"};
         if(needShape.contains(mode)){
             bool hasMask=!targetPanel->getMask().empty();

@@ -314,7 +314,7 @@ These features require the graphical interface:
 | **Navigate Algorithm** | Gradient-guided pixel movement |
 | **Swap Algorithm** | Bidirectional pixel exchange |
 | **Blend Algorithm** | Physics-inspired animated transitions |
-| **Reborn Algorithm** | Shape-pair pixel transplant between drawn regions on base and target |
+| **Reborn Algorithm** | Shape-pair Merge — drawn base regions' pixels resort inside the matched target regions over a black/empty background |
 | **Drawer Algorithm** | Canvas-based sketch to image transformation |
 | **Real-time Streamed Preview** | Watch the run live on a frame timeline, then replay or reverse it from the cache |
 | **Interactive Shape Selection** | Click to select/deselect regions |

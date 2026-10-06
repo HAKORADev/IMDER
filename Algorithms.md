@@ -417,35 +417,37 @@ Blend simulates physical movement with forces and attractions. The gradient foll
 ---
 
 ### Reborn
-**What it does:** Transplants pixels between matched drawn shapes — only the pixels inside a drawn shape on the base move, and they end up looking like the pixels inside the matching shape on the target
+**What it does:** Rebuilds the matched target shape out of the base shape's own pixels — the drawn base shape's pixels leave a black/empty background behind, travel to the matched target shape, and resort themselves there the same way Merge resorts a whole image
 **How it works:**
 
 ```
 Base shape k pixels  ──┐
-                       ├─ both sets sorted by Morton code, matched by rank
+                       ├─ both sets sorted by grayscale, matched by rank (the Merge law)
 Target shape k pixels ─┘
 
-Destinations: target shape positions re-embedded around the base shape's centroid
-Colors: morph from the base pixel's color to the matched target pixel's color
+Destinations: the target shape's own pixel positions, rank by rank
+Colors: the base pixels keep their own colors — the look comes from the resorting, not from recoloring
 ```
 
-1. You draw shapes on the base and shapes on the target (Pen + Analyze on both panels)
+1. You draw shapes on the base and shapes on the target (Pen + Analyze on both panels — the first frame for videos)
 2. Shapes are numbered by draw order — base shape 1 chains with target shape 1, shape 2 with shape 2, and so on
 3. Extra shapes on either side are ignored since they have no match
-4. Only the pixels inside each drawn base shape participate — everything outside stays untouched
-5. Over the animation the matched pixels glide from their origin to their destination while their color morphs toward the target shape's palette
+4. Only the pixels inside each drawn base shape participate — the frame is a black/empty canvas and those traveling pixels are its only content
+5. Over the animation the pixels glide from the base shape to the target shape and land rank-matched by grayscale, so the target shape's look is rebuilt out of the base's own pixels exactly like Merge rebuilds a whole image
 
 ```python
 # Base: a photo of the sun
 # Target: a dog face
 # Draw one shape on the sun, one shape on the dog's eye
-# Result: only the drawn sun region rearranges and recolors itself to look like the eye
+# Result: the sun's pixels vacate their spot (black behind them), fly to the eye's
+#         area and resort themselves there to form the eye's look out of the sun's own colors
 ```
 
 **Key characteristics:**
 - Shape-level control: other algorithms transform a whole mask; Reborn pairs up individual shapes
 - Draw-order chaining makes multi-shape runs predictable
-- Base pixels travel inside (or right around) their own shape — the rest of the image never moves
+- Merge law, shape-sized: grayscale rank matching, original colors, black/empty background — nothing is recolored and nothing outside the shapes moves
+- Video pairs work too (image-video, video-image, video-video): the shapes are drawn once on both previews and every frame pair is matched with the same law
 
 ---
 
@@ -606,8 +608,8 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 | **Navigate** | Yes | Organic flow | Curved paths | Spatial sorting | Slow | ❌ No |
 | **Swap** | Yes | Balanced exchange | Bidirectional | Best match colors | Slow | ❌ No |
 | **Blend** | Yes | Fluid dynamics | Swirling paths | Gradient guided | Medium | ❌ No |
-| **Reborn** | Both sides | Shape-pair transplant | Matched shape paths | Target shape colors | Medium | ❌ No |
-| **Drawer** | N/A (Canvas) | Sketch to reality | Direct paths | Drawing colors | Medium | ❌ No |
+| **Reborn** | Both sides | Shape-pair Merge resort | Matched shape paths | Original base colors (resorted) | Medium | ✅ Yes |
+| **Drawer** | N/A (Canvas) | Sketch to reality | Direct paths | Drawing colors | Medium | ✅ Yes |
 
 *Fusion without mask works technically but not included due to transformation logic mismatch
 
