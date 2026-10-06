@@ -12,6 +12,7 @@
   - [Navigate](#navigate)
   - [Swap](#swap)
   - [Blend](#blend)
+  - [Reborn](#reborn)
   - [Drawer](#drawer)
 - [Video Processing](#video-processing)
   - [Why Video Has Limited Algorithms](#why-video-has-limited-algorithms)
@@ -415,6 +416,39 @@ Blend simulates physical movement with forces and attractions. The gradient foll
 
 ---
 
+### Reborn
+**What it does:** Transplants pixels between matched drawn shapes — only the pixels inside a drawn shape on the base move, and they end up looking like the pixels inside the matching shape on the target
+**How it works:**
+
+```
+Base shape k pixels  ──┐
+                       ├─ both sets sorted by Morton code, matched by rank
+Target shape k pixels ─┘
+
+Destinations: target shape positions re-embedded around the base shape's centroid
+Colors: morph from the base pixel's color to the matched target pixel's color
+```
+
+1. You draw shapes on the base and shapes on the target (Pen + Analyze on both panels)
+2. Shapes are numbered by draw order — base shape 1 chains with target shape 1, shape 2 with shape 2, and so on
+3. Extra shapes on either side are ignored since they have no match
+4. Only the pixels inside each drawn base shape participate — everything outside stays untouched
+5. Over the animation the matched pixels glide from their origin to their destination while their color morphs toward the target shape's palette
+
+```python
+# Base: a photo of the sun
+# Target: a dog face
+# Draw one shape on the sun, one shape on the dog's eye
+# Result: only the drawn sun region rearranges and recolors itself to look like the eye
+```
+
+**Key characteristics:**
+- Shape-level control: other algorithms transform a whole mask; Reborn pairs up individual shapes
+- Draw-order chaining makes multi-shape runs predictable
+- Base pixels travel inside (or right around) their own shape — the rest of the image never moves
+
+---
+
 ### Drawer
 **What it does:** Transforms hand-drawn sketches into detailed target images while preserving artistic intent
 **How it works:**
@@ -572,6 +606,7 @@ The GUI *could* animate video transformations frame-by-frame, but it would:
 | **Navigate** | Yes | Organic flow | Curved paths | Spatial sorting | Slow | ❌ No |
 | **Swap** | Yes | Balanced exchange | Bidirectional | Best match colors | Slow | ❌ No |
 | **Blend** | Yes | Fluid dynamics | Swirling paths | Gradient guided | Medium | ❌ No |
+| **Reborn** | Both sides | Shape-pair transplant | Matched shape paths | Target shape colors | Medium | ❌ No |
 | **Drawer** | N/A (Canvas) | Sketch to reality | Direct paths | Drawing colors | Medium | ❌ No |
 
 *Fusion without mask works technically but not included due to transformation logic mismatch

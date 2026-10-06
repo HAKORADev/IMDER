@@ -10,11 +10,12 @@
 [![GitHub release](https://img.shields.io/github/release/HAKORADev/IMDER.svg)](https://github.com/HAKORADev/IMDER/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-📦 **Latest Release: v1.2.5** (February 2026) — Featuring custom resolutions up to 16384×16384, configurable FPS (30-240), and smart scaling support.
+📦 **Latest Release: v1.3.0** (October 2026) — Featuring the new Reborn algorithm, Smart Analyze, video processing in the GUI, a streamed preview cache with timeline replay, and the app icon baked into a single small native binary.
 
 **Important Notes:**
-- 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows/Linux(C++ Build) [v1.2.5](https://github.com/HAKORADev/IMDER/releases/tag/v1.2.5) and macOS/Linux(Python Build) [v1.0.0](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0), but running from source ensures you always have the newest features and fixes.
+- 🔧 **Run from source for the latest version.** Pre-built binaries are available for Windows/Linux(C++ Build) [v1.3.0](https://github.com/HAKORADev/IMDER/releases/tag/v1.3.0) and macOS/Linux(Python Build) [v1.0.0](https://github.com/HAKORADev/IMDER/releases/tag/v1.0.0), but running from source ensures you always have the newest features and fixes.
 - 🤖 **For AI agents and automated tools:** See [Bots.md](https://github.com/HAKORADev/IMDER/blob/main/Bots.md)
+- 🖼️ **The app icon is compiled into the executable** — the native packages ship the binary and helper scripts (cli.bat on Windows, cli.sh + install.sh on Linux), nothing else
 
 📦 **IMDER is available as a Python library on PyPI:** Install with `pip install imder` for CLI automation and integration into your projects. [See Python Library Docs](pip-imder.md)
 
@@ -67,7 +68,7 @@ IMDER operates as both a **standalone GUI application** (source) and a **Python 
 |---------|--------------|----------------|
 | **Interface** | PyQt5 GUI | CLI + Python API |
 | **Best for** | Interactive editing | Automation, batch processing |
-| **Algorithms** | 10 modes + Shape tools + Drawer | 4 core modes |
+| **Algorithms** | 11 modes + Shape tools + Reborn + Drawer | 4 core modes |
 | **Usage** | Point-and-click | Code integration |
 | **Dependencies** | PyQt5, OpenCV, NumPy | OpenCV, NumPy, Pillow |
 
@@ -75,9 +76,9 @@ IMDER operates as both a **standalone GUI application** (source) and a **Python 
 
 ## Core Capabilities
 
-### 🎨 **10 Processing Algorithms**
+### 🎨 **11 Processing Algorithms**
 
-IMDER offers 10 distinct pixel manipulation algorithms, each designed for specific visual effects:
+IMDER offers 11 distinct pixel manipulation algorithms, each designed for specific visual effects:
 
 | Mode | Description | Mask Required | Video Support |
 |------|-------------|---------------|---------------|
@@ -90,6 +91,7 @@ IMDER offers 10 distinct pixel manipulation algorithms, each designed for specif
 | **Navigate** | Morton curve-guided pixel movement | Yes | ❌ No |
 | **Swap** | Bidirectional pixel exchange | Yes | ❌ No |
 | **Blend** | Physics-inspired fluid dynamics | Yes | ❌ No |
+| **Reborn** | Shape-pair pixel transplant — drawn base shapes morph to look like the matched target shapes | Both sides | ❌ No |
 | **Drawer** | Canvas-based sketch to image transformation | N/A | ❌ No |
 
 ### 🎬 **Video Processing**
@@ -105,7 +107,8 @@ Full video-to-video and video-to-image processing capabilities:
 
 - **Resolution Flexibility**: Standard presets (128×128 to 2048×2048) plus custom resolutions up to **16384×16384**
 - **Smart Scaling**: Automatic upscaling using nearest-neighbor interpolation before processing, ensuring no quality loss from downscaling-only workflows
-- **Shape Selection**: Automatic k-means segmentation or manual pen-tool masking
+- **Shape Selection**: Automatic k-means segmentation, manual pen-tool masking with include (+) and exclude (-) shapes, and a Smart mode that refines each drawn shape toward the object underneath
+- **Multi-Analyze**: Keep drawing new shapes on top of an existing analysis — exclude shapes eat into includes and every pass overwrites the previous mask accurately
 - **Transform Operations**: 90° rotation increments and horizontal flip
 - **Multi-segment Support**: Combine multiple selections for complex transformations
 
@@ -255,18 +258,19 @@ See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 
 ### GUI Mode
 
-1. Launch: `python src/imder.py`
-2. Select algorithm from dropdown (10 available modes)
+1. Launch: `python src/imder.py` (or the native binary)
+2. Select algorithm from dropdown (11 available modes — options gray out based on the loaded media)
 3. Choose resolution:
    - Standard presets: 128×128 to 2048×2048
    - Custom: Click "Custom" to enter any value up to 16384×16384
-4. Set FPS for video exports (30/60/90/120/240)
+4. Set FPS for image-image animation exports (30/60/90/120/240)
 5. Load base and target media (images or videos)
-6. Apply transforms (rotate/flip) if needed
-7. For mask-dependent algorithms, use "Analyze Shapes" or Pen tool
-8. Configure audio options for video exports
-9. Click "Start Processing" for real-time preview
-10. Export final results (PNG/MP4/GIF)
+6. Apply transforms (rotate/flip) on images if needed
+7. Pick sound (Mute / Gen / Target) with a quality level for video exports
+8. For mask-dependent algorithms, use "Analyze" (As-is or Smart) or the Pen tool (+/- shapes, Clear Shapes)
+9. For Reborn mode, draw and analyze at least one shape on the Base and one on the Target
+10. Click "Start Processing" for the streamed live preview — the frame timeline tracks and scrubs the run
+11. Replay the cached run like a normal video (forward or reverse), then export (PNG/MP4/GIF)
 
 **Drawer Mode Workflow:**
 1. Select "Drawer" from mode dropdown
@@ -274,18 +278,28 @@ See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 3. Load target image in right panel
 4. Process to see drawing transform into target
 
-### CLI Mode (Source)
+### CLI Mode (Native Binary)
 
-**Interactive:**
+**Interactive (with the IMDER ASCII banner):**
 ```bash
-python src/imder.py cli
+imder cli        # or cli.bat / cli.sh from the release package
 ```
 
-**Direct Arguments:**
+**Direct Processing (same syntax as the Python library):**
 ```bash
-python src/imder.py base.jpg target.jpg missform 1024
-python src/imder.py video1.mp4 video2.mp4 merge 512 target-sound 7
+# Image processing with specific formats and algorithm
+imder base.jpg target.jpg ./output --results gif mp4 --algo merge --res 1024
+
+# Video processing with target audio at a fixed sample rate
+imder video1.mp4 video2.mp4 ./output --results mp4 --sound target --sq_hz 44100
+
+# Free-form resolution and pixel-generated sound
+imder base.png target.png ./output --results png --algo missform --res 900 --sound gen
 ```
+
+Outputs land in the result folder as `imder_<timestamp>.png/.gif/.mp4`.
+
+**First run on Linux?** Run `install.sh` from the package — it creates a desktop entry and the `imder` shell alias.
 
 ---
 

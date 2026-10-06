@@ -11,11 +11,12 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 
-add_executable(imder src/imder.cpp)
+add_executable(imder src/imder.cpp src/imder.qrc)
 if(WIN32)
   target_sources(imder PRIVATE app.rc)
 endif()

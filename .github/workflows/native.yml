@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'release version without the v, e.g. 1.2.5 (tag becomes v1.2.5)'
+        description: 'release version without the v, e.g. 1.3.0 (tag becomes v1.3.0)'
         required: true
       publish:
-        description: 'replace the release assets in-place'
+        description: 'publish: create/refresh the release and upload the assets'
         type: boolean
         default: false
 
@@ -114,8 +114,13 @@ jobs:
           if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH"; Write-Host "real ffmpeg: $($real.FullName)" } else { Write-Host "no real ffmpeg dir found, using PATH" }
           ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2> $null
           ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2> $null
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.jpg 2> $null
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=2" -c:v mpeg4 -q:v 2 -an tmpv.mp4 2> $null
+          ffmpeg -nostdin -y -f lavfi -i "sine=frequency=440:duration=2" -c:a aac tmpa.m4a 2> $null
+          ffmpeg -nostdin -y -i tmpv.mp4 -i tmpa.m4a -c copy -shortest tbv.mp4 2> $null
           if (-not (Test-Path ta.png)) { Write-Host "smoke setup FAILED"; exit 1 }
-          Write-Host "IMDER_NO_CONSOLE_ATTACH=$env:IMDER_NO_CONSOLE_ATTACH"
+          if (-not (Test-Path ta.jpg)) { Write-Host "jpg smoke setup FAILED"; exit 1 }
+          if (-not (Test-Path tbv.mp4)) { Write-Host "video smoke setup FAILED"; exit 1 }
 
       - name: smoke 1 - merge one-liner (png+gif+mp4)
         timeout-minutes: 6
@@ -124,27 +129,27 @@ jobs:
           IMDER_NO_CONSOLE_ATTACH: "1"
         run: |
           $ErrorActionPreference = "Continue"
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128","mute") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm1.out -RedirectStandardError sm1.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","results","--results","png","gif","mp4","--algo","merge","--res","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm1.out -RedirectStandardError sm1.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm1.out
           Write-Host "== stderr:"; Get-Content sm1.err
-          if (-not (Test-Path "results\image_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
-          if (-not (Test-Path "results\animation_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
-          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\imder_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\imder_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\imder_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
           Write-Host "smoke 1 OK"
 
-      - name: smoke 2 - missform
+      - name: smoke 2 - missform + jpg base
         timeout-minutes: 6
         shell: pwsh
         env:
           IMDER_NO_CONSOLE_ATTACH: "1"
         run: |
           $ErrorActionPreference = "Continue"
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","missform","128","mute") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm2.out -RedirectStandardError sm2.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.jpg","tb.png","results","--results","mp4","--algo","missform","--res","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm2.out -RedirectStandardError sm2.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm2.out
           Write-Host "== stderr:"; Get-Content sm2.err
-          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "missform video smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\imder_*.mp4")) { Write-Host "missform/jpg smoke FAILED"; exit 1 }
           Write-Host "smoke 2 OK"
 
       - name: smoke 3 - generated sound + audio probe
@@ -156,15 +161,37 @@ jobs:
           $ErrorActionPreference = "Continue"
           $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
           if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH" }
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128","sound") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm3.out -RedirectStandardError sm3.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","results","--results","mp4","--algo","merge","--res","128","--sound","gen") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm3.out -RedirectStandardError sm3.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm3.out
           Write-Host "== stderr:"; Get-Content sm3.err
-          $vid = Get-ChildItem "results\video_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $vid = Get-ChildItem "results\imder_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
           Write-Host "audio stream probe: $probe"
           if ("$probe" -notmatch "audio") { Write-Host "audio mux smoke FAILED"; exit 1 }
           Write-Host "smoke 3 OK"
+
+      - name: smoke 4 - target sound at fixed sample rate (sq_hz)
+        timeout-minutes: 6
+        shell: pwsh
+        env:
+          IMDER_NO_CONSOLE_ATTACH: "1"
+        run: |
+          $ErrorActionPreference = "Continue"
+          $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
+          if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH" }
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=2" -c:v mpeg4 -q:v 2 -an tmpv.mp4 2> $null
+          ffmpeg -nostdin -y -f lavfi -i "sine=frequency=440:duration=2" -c:a aac tmpa.m4a 2> $null
+          ffmpeg -nostdin -y -i tmpv.mp4 -i tmpa.m4a -c copy -shortest tbv.mp4 2> $null
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tbv.mp4","results","--results","mp4","--algo","merge","--res","128","--sound","target","--sq_hz","16000") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm4.out -RedirectStandardError sm4.err
+          Write-Host "== exit code $($p.ExitCode)"
+          Write-Host "== stdout:"; Get-Content sm4.out
+          Write-Host "== stderr:"; Get-Content sm4.err
+          $vid = Get-ChildItem "results\imder_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type,sample_rate -of csv=p=0 $vid.FullName
+          Write-Host "audio stream probe: $probe"
+          if ("$probe" -notmatch "audio") { Write-Host "sq_hz smoke FAILED"; exit 1 }
+          Write-Host "smoke 4 OK"
 
       - name: exe size
         shell: pwsh
@@ -185,7 +212,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist\imder | Out-Null
           Copy-Item build\Release\imder.exe dist\imder\
-          Copy-Item src\imder.png dist\imder\
+          Copy-Item packaging\windows\cli.bat dist\imder\
           Compress-Archive -Path dist\imder -DestinationPath "IMDER_windows_v${{ inputs.version }}.zip"
 
       - uses: actions/upload-artifact@v4
@@ -280,24 +307,34 @@ jobs:
             -DQt5_DIR=/opt/qts/lib/cmake/Qt5 -DOpenCV_DIR=/opt/src/ocvbuild
           cmake --build build -j "$(nproc)"
 
-      - name: smoke test (the real binary, cli one-liners + gif + mp4 + sound)
+      - name: smoke test (the real binary, cli one-liners + jpg + gif + mp4 + sound)
         timeout-minutes: 20
         run: |
           command -v ffmpeg ffprobe || { echo "no ffmpeg on runner"; exit 1; }
           ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.png 2>/dev/null
           ffmpeg -nostdin -y -f lavfi -i "smptebars=size=128x128:rate=1:duration=1" -frames:v 1 tb.png 2>/dev/null
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=1" -frames:v 1 ta.jpg 2>/dev/null
+          ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=2" -c:v mpeg4 -q:v 2 -an tmpv.mp4 2>/dev/null
+          ffmpeg -nostdin -y -f lavfi -i "sine=frequency=440:duration=2" -c:a aac tmpa.m4a 2>/dev/null
+          ffmpeg -nostdin -y -i tmpv.mp4 -i tmpa.m4a -c copy -shortest tbv.mp4 2>/dev/null
           [ -f ta.png ] || { echo "smoke setup FAILED"; exit 1; }
+          [ -f ta.jpg ] || { echo "jpg smoke setup FAILED"; exit 1; }
+          [ -f tbv.mp4 ] || { echo "video smoke setup FAILED"; exit 1; }
           echo "== [1] merge one-liner (png+gif+mp4)"
-          ./build/imder ta.png tb.png merge 128 mute
-          ls results/image_*.png > /dev/null || { echo "image smoke FAILED"; exit 1; }
-          ls results/animation_*.gif > /dev/null || { echo "gif smoke FAILED"; exit 1; }
-          ls results/video_*.mp4 > /dev/null || { echo "video smoke FAILED"; exit 1; }
-          echo "== [2] missform"
-          ./build/imder ta.png tb.png missform 128 mute
+          ./build/imder ta.png tb.png results --results png gif mp4 --algo merge --res 128
+          ls results/imder_*.png > /dev/null || { echo "image smoke FAILED"; exit 1; }
+          ls results/imder_*.gif > /dev/null || { echo "gif smoke FAILED"; exit 1; }
+          ls results/imder_*.mp4 > /dev/null || { echo "video smoke FAILED"; exit 1; }
+          echo "== [2] missform with jpg base"
+          ./build/imder ta.jpg tb.png results --results mp4 --algo missform --res 128
           echo "== [3] generated sound"
-          ./build/imder ta.png tb.png merge 128 sound
-          vid=$(ls -t results/video_*.mp4 | head -1)
+          ./build/imder ta.png tb.png results --results mp4 --algo merge --res 128 --sound gen
+          vid=$(ls -t results/imder_*.mp4 | head -1)
           ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$vid" | grep -q audio || { echo "audio mux smoke FAILED"; exit 1; }
+          echo "== [4] target sound at fixed sample rate (sq_hz)"
+          ./build/imder ta.png tbv.mp4 results --results mp4 --algo merge --res 128 --sound target --sq_hz 16000
+          vid=$(ls -t results/imder_*.mp4 | head -1)
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type,sample_rate -of csv=p=0 "$vid" | grep -q audio || { echo "sq_hz smoke FAILED"; exit 1; }
           echo "== exe size:"
           ls -la build/imder
           echo "smoke OK"
@@ -314,8 +351,9 @@ jobs:
         run: |
           mkdir -p dist/imder
           cp build/imder dist/imder/
-          cp src/imder.png dist/imder/
-          chmod +x dist/imder/imder
+          cp packaging/linux/cli.sh dist/imder/
+          cp packaging/linux/install.sh dist/imder/
+          chmod +x dist/imder/imder dist/imder/cli.sh dist/imder/install.sh
           (cd dist && zip -qr ../"imder_linux_v${{ inputs.version }}_cpp.zip" imder)
 
       - uses: actions/upload-artifact@v4
@@ -334,11 +372,15 @@ jobs:
         with:
           path: pkgs
 
-      - name: replace release assets in-place
+      - name: publish release v${{ inputs.version }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ inputs.version }}"
+          NOTES=$(mktemp)
+          awk '/^## \[v${{ inputs.version }}\]/{f=1;next} f&&/^## \[/{exit} f' changelog.md > "$NOTES"
+          if [ ! -s "$NOTES" ]; then echo "IMDER v${{ inputs.version }}" > "$NOTES"; fi
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --title "IMDER v${{ inputs.version }}" --notes-file "$NOTES"
           gh release upload "$TAG" \
             "pkgs/imder-windows-cpp/IMDER_windows_v${{ inputs.version }}.zip" \
             "pkgs/imder-linux-cpp/imder_linux_v${{ inputs.version }}_cpp.zip" \

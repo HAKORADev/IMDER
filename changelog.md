@@ -2,6 +2,30 @@
 
 All notable changes to IMDER - Image Blender will be documented in this file.
 
+## [v1.3.0] - 2026-10-06
+
+### Added
+- **Reborn Algorithm**: Brand new shape-pair algorithm placed right before Drawer — draw a shape on the base and a shape on the target, and only the pixels inside the drawn base shape move and morph to look like the ones inside the matched target shape. Shapes are chained by draw order (first base shape with first target shape) and extras on either side are ignored
+- **Smart Analyze**: The Analyze button gets a drop-down once pen shapes exist — "As-is" keeps the current fill logic and "Smart" refines every drawn shape toward the real object underneath (a rough circle drawn on a car snaps to cover the car more accurately)
+- **Multi-Analyze Support**: Include (+) and exclude (-) shapes persist between passes — draw more shapes on top of an existing analysis, exclude shapes eat into include shapes, and every new analyze pass overwrites the previous mask accurately; a Clear Shapes entry lives in the Pen drop-down instead of an auto-reset
+- **Video in the GUI**: The GUI now loads videos (MP4/AVI/MOV/MKV/FLV/WMV) and processes them with the same frame-accurate pipeline as the CLI — mode options gray out based on the loaded media (image-image, video-video, image-video, video-image), export choices adapt, and the sound picker unlocks target audio for video targets
+- **Streamed Preview Cache**: Preview frames stream to a disk cache with a small memory footprint — a frame-number timeline tracks the run live and can be scrubbed, and Replay plays the cached run back like a normal video (forward or reverse); the cache is cleared on every IMDER open and close
+- **Sound Options in the GUI**: Mute / Gen / Target sound selection with a 1-10 quality picker for target audio, matching the CLI
+- **CLI Restored 1:1 with the Python Library**: `imder <base> <target> <result> --results png gif mp4 --algo merge --res 512 --sound mute --sq 3 --sq_hz 44100`, the IMDER ASCII banner in interactive mode, free-form resolution 1-16384, sound options named mute/gen/target, and `imder_<timestamp>.<ext>` output naming; video runs now stream frames instead of holding the whole video in memory
+- **Live CLI Progress**: One-liners print a real progress bar with the current stage (sorting pixels, rendering frame, muxing audio) to stderr
+- **App Icon Baked In**: The taskbar/window icon is compiled into the executable through a Qt resource — no imder.png file sits next to the binary anymore
+- **Helper Files in the Packages**: The Windows zip ships cli.bat and the Linux zip ships cli.sh plus install.sh (desktop entry and shell alias installer)
+
+### Fixed
+- **JPG Files Fail to Read**: Image loading now goes through a layered reader — OpenCV first, an stb_image fallback when the static build's own jpeg codec refuses, and an ffmpeg decode as the last resort — so .jpg/.jpeg inputs read reliably on every platform
+- **Drawer Connecting Lines**: Starting a new stroke near the previous one no longer draws a spurious line from the old stroke's end — the canvas only connects from a real pen-down point
+- **Dropdown White Edges and Lag**: Popups render on a dark application palette with square frames and no drop-shadow hint — no more white borders at the top and bottom of dropdowns and a snappier feel
+- **Audio/Frame Timing**: Video-video runs keep the base video's fps like the Python library, single-video runs keep the video's own fps, and image-image animations run 302 frames like the Python reference; pixel-sound synthesizes exactly 1/fps of audio per frame so audio and video durations always line up, and extra frames beyond the shorter input are ignored the same way the Python library does it
+
+### Changed
+- **CLI Syntax**: The one-liner now matches the Python library (base, target, result folder plus flags) — the old positional algorithm/resolution/sound form is replaced and sound options are named mute/gen/target
+- **Output Naming**: All exports are named `imder_<timestamp>.<ext>` inside the chosen result folder (the GUI exports to results/)
+
 ## [v1.2.5] - 2026-02-01
 
 ### Added
