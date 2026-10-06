@@ -129,13 +129,13 @@ jobs:
           IMDER_NO_CONSOLE_ATTACH: "1"
         run: |
           $ErrorActionPreference = "Continue"
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","results","--results","png","gif","mp4","--algo","merge","--res","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm1.out -RedirectStandardError sm1.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm1.out -RedirectStandardError sm1.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm1.out
           Write-Host "== stderr:"; Get-Content sm1.err
-          if (-not (Test-Path "results\imder_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
-          if (-not (Test-Path "results\imder_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
-          if (-not (Test-Path "results\imder_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\image_*.png")) { Write-Host "image smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\animation_*.gif")) { Write-Host "gif smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "video smoke FAILED"; exit 1 }
           Write-Host "smoke 1 OK"
 
       - name: smoke 2 - missform + jpg base
@@ -145,11 +145,11 @@ jobs:
           IMDER_NO_CONSOLE_ATTACH: "1"
         run: |
           $ErrorActionPreference = "Continue"
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.jpg","tb.png","results","--results","mp4","--algo","missform","--res","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm2.out -RedirectStandardError sm2.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.jpg","tb.png","missform","128") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm2.out -RedirectStandardError sm2.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm2.out
           Write-Host "== stderr:"; Get-Content sm2.err
-          if (-not (Test-Path "results\imder_*.mp4")) { Write-Host "missform/jpg smoke FAILED"; exit 1 }
+          if (-not (Test-Path "results\video_*.mp4")) { Write-Host "missform/jpg smoke FAILED"; exit 1 }
           Write-Host "smoke 2 OK"
 
       - name: smoke 3 - generated sound + audio probe
@@ -161,17 +161,17 @@ jobs:
           $ErrorActionPreference = "Continue"
           $real = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1
           if ($real) { $env:PATH = "$($real.DirectoryName);$env:PATH" }
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","results","--results","mp4","--algo","merge","--res","128","--sound","gen") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm3.out -RedirectStandardError sm3.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tb.png","merge","128","sound") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm3.out -RedirectStandardError sm3.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm3.out
           Write-Host "== stderr:"; Get-Content sm3.err
-          $vid = Get-ChildItem "results\imder_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $vid = Get-ChildItem "results\video_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
           Write-Host "audio stream probe: $probe"
           if ("$probe" -notmatch "audio") { Write-Host "audio mux smoke FAILED"; exit 1 }
           Write-Host "smoke 3 OK"
 
-      - name: smoke 4 - target sound at fixed sample rate (sq_hz)
+      - name: smoke 4 - target sound with quality (1-10)
         timeout-minutes: 6
         shell: pwsh
         env:
@@ -183,14 +183,14 @@ jobs:
           ffmpeg -nostdin -y -f lavfi -i "testsrc=size=128x128:rate=1:duration=2" -c:v mpeg4 -q:v 2 -an tmpv.mp4 2> $null
           ffmpeg -nostdin -y -f lavfi -i "sine=frequency=440:duration=2" -c:a aac tmpa.m4a 2> $null
           ffmpeg -nostdin -y -i tmpv.mp4 -i tmpa.m4a -c copy -shortest tbv.mp4 2> $null
-          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tbv.mp4","results","--results","mp4","--algo","merge","--res","128","--sound","target","--sq_hz","16000") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm4.out -RedirectStandardError sm4.err
+          $p = Start-Process -FilePath "build\Release\imder.exe" -ArgumentList @("ta.png","tbv.mp4","merge","128","target-sound","5") -Wait -PassThru -NoNewWindow -RedirectStandardOutput sm4.out -RedirectStandardError sm4.err
           Write-Host "== exit code $($p.ExitCode)"
           Write-Host "== stdout:"; Get-Content sm4.out
           Write-Host "== stderr:"; Get-Content sm4.err
-          $vid = Get-ChildItem "results\imder_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type,sample_rate -of csv=p=0 $vid.FullName
+          $vid = Get-ChildItem "results\video_*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $probe = & ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $vid.FullName
           Write-Host "audio stream probe: $probe"
-          if ("$probe" -notmatch "audio") { Write-Host "sq_hz smoke FAILED"; exit 1 }
+          if ("$probe" -notmatch "audio") { Write-Host "target-sound smoke FAILED"; exit 1 }
           Write-Host "smoke 4 OK"
 
       - name: exe size
@@ -321,20 +321,20 @@ jobs:
           [ -f ta.jpg ] || { echo "jpg smoke setup FAILED"; exit 1; }
           [ -f tbv.mp4 ] || { echo "video smoke setup FAILED"; exit 1; }
           echo "== [1] merge one-liner (png+gif+mp4)"
-          ./build/imder ta.png tb.png results --results png gif mp4 --algo merge --res 128
-          ls results/imder_*.png > /dev/null || { echo "image smoke FAILED"; exit 1; }
-          ls results/imder_*.gif > /dev/null || { echo "gif smoke FAILED"; exit 1; }
-          ls results/imder_*.mp4 > /dev/null || { echo "video smoke FAILED"; exit 1; }
+          ./build/imder ta.png tb.png merge 128
+          ls results/image_*.png > /dev/null || { echo "image smoke FAILED"; exit 1; }
+          ls results/animation_*.gif > /dev/null || { echo "gif smoke FAILED"; exit 1; }
+          ls results/video_*.mp4 > /dev/null || { echo "video smoke FAILED"; exit 1; }
           echo "== [2] missform with jpg base"
-          ./build/imder ta.jpg tb.png results --results mp4 --algo missform --res 128
+          ./build/imder ta.jpg tb.png missform 128
           echo "== [3] generated sound"
-          ./build/imder ta.png tb.png results --results mp4 --algo merge --res 128 --sound gen
-          vid=$(ls -t results/imder_*.mp4 | head -1)
+          ./build/imder ta.png tb.png merge 128 sound
+          vid=$(ls -t results/video_*.mp4 | head -1)
           ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$vid" | grep -q audio || { echo "audio mux smoke FAILED"; exit 1; }
-          echo "== [4] target sound at fixed sample rate (sq_hz)"
-          ./build/imder ta.png tbv.mp4 results --results mp4 --algo merge --res 128 --sound target --sq_hz 16000
-          vid=$(ls -t results/imder_*.mp4 | head -1)
-          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type,sample_rate -of csv=p=0 "$vid" | grep -q audio || { echo "sq_hz smoke FAILED"; exit 1; }
+          echo "== [4] target sound with quality (1-10)"
+          ./build/imder ta.png tbv.mp4 merge 128 target-sound 5
+          vid=$(ls -t results/video_*.mp4 | head -1)
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_type,sample_rate -of csv=p=0 "$vid" | grep -q audio || { echo "target-sound smoke FAILED"; exit 1; }
           echo "== exe size:"
           ls -la build/imder
           echo "smoke OK"

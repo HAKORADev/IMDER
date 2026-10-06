@@ -700,7 +700,7 @@ static bool writeWav(const std::string& path,const std::vector<int16_t>& s,int s
 }
 
 static bool extractAudio(const std::string& vid,const std::string& out,double dur,int quality,bool isHz=false){
-    if(!checkFfmpeg()){fprintf(stderr,"Error: ffmpeg not found.\n");return false;}
+    if(!checkFfmpeg()){printf("Error: ffmpeg is not installed or not found in PATH. Cannot extract audio.\n");return false;}
     const char* qmap[]={"32k","64k","96k","128k","160k","192k","224k","256k","320k","copy"};
     std::string cmd="ffmpeg -i \""+vid+"\"";
     if(dur>0) cmd+=" -t "+std::to_string(dur);
@@ -737,14 +737,28 @@ static void genSoundForFrame(const cv::Mat& rgbFrame,double frameDur,
     }
 }
 
-static std::string addAudioToVideo(const std::string& videoPath,
-                                   const std::vector<cv::Mat>& frames,
-                                   double fps,const std::string& outPath,
-                                   const std::string& soundOpt,
-                                   const std::string& targetAudioPath,
-                                   int audioQuality,bool audioHz=false){
+static std::string audioMux(const std::string& videoPath,const std::string& audioPath,
+                            const std::string& outPath){
+    printf("\nMerging audio with video...\n");
+    std::string cmd="ffmpeg -i \""+videoPath+"\" -i \""+audioPath+
+    "\" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -y \""+
+    outPath+"\""+outNull();
+    printf("Merging audio with video using ffmpeg...\n");
+    fflush(stdout);
+    if(system(cmd.c_str())!=0){printf("Error adding audio.\n");return videoPath;}
+    size_t d=outPath.find_last_of("/\\");
+    printf("Successfully added sound to video: %s\n",(d==std::string::npos?outPath:outPath.substr(d+1)).c_str());
+    return outPath;
+}
+
+static std::string addAudioToVideoFrames(const std::string& videoPath,
+                                         long frameCount,const std::function<bool(cv::Mat&)>& fetch,
+                                         double fps,const std::string& outPath,
+                                         const std::string& soundOpt,
+                                         const std::string& targetAudioPath,
+                                         int audioQuality,bool audioHz){
     if(soundOpt=="mute") return videoPath;
-    if(!checkFfmpeg()){fprintf(stderr,"Error: ffmpeg not found.\n");return videoPath;}
+    if(!checkFfmpeg()){printf("Error: ffmpeg is not installed or not found in PATH. Cannot add audio.\n");return videoPath;}
 
     QTemporaryDir tmpDir;
     if(!tmpDir.isValid()) return videoPath;
@@ -752,25 +766,42 @@ static std::string addAudioToVideo(const std::string& videoPath,
     std::string audioPath=tmpPath+"/audio.mp3";
 
     if(soundOpt=="target-sound"&&!targetAudioPath.empty()){
-        double dur=frames.empty()?0.0:(double)frames.size()/fps;
+        double dur=frameCount>0?(double)frameCount/fps:0.0;
         if(!extractAudio(targetAudioPath,audioPath,dur,audioQuality,audioHz)) return videoPath;
+        printf("Using target video audio with %d%% quality\n",audioQuality);
     } else if(soundOpt=="sound"){
         int sr=44100; double fd=1.0/fps;
         std::vector<int16_t> full;
-        full.reserve(frames.size()*(size_t)(sr*fd+1));
-        for(int i=0;i<(int)frames.size();i++){
-            genSoundForFrame(frames[i],fd,sr,full);
+        full.reserve(frameCount>0?(size_t)frameCount*(size_t)(sr*fd+1):0);
+        printf("\nGenerating sound for each frame:\n");
+        fflush(stdout);
+        cv::Mat frm;
+        for(long i=0;i<frameCount;i++){
+            if(!fetch(frm)) return videoPath;
+            genSoundForFrame(frm,fd,sr,full);
+            printf("Frame %ld/%ld pixels analyzed for sound %.1f%%\n",i+1,frameCount,100.0*(double)(i+1)/(double)frameCount);
         }
+        printf("\nCompiling audio chunks:\n");
+        fflush(stdout);
         std::string wp=tmpPath+"/audio.wav";
         audioPath=wp;
         if(!writeWav(audioPath,full,sr)) return videoPath;
     } else { return videoPath; }
 
-    std::string cmd="ffmpeg -i \""+videoPath+"\" -i \""+audioPath+
-    "\" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -y \""+
-    outPath+"\""+outNull();
-    if(system(cmd.c_str())!=0){fprintf(stderr,"Error adding audio.\n");return videoPath;}
-    return outPath;
+    return audioMux(videoPath,audioPath,outPath);
+}
+
+static std::string addAudioToVideo(const std::string& videoPath,
+                                   const std::vector<cv::Mat>& frames,
+                                   double fps,const std::string& outPath,
+                                   const std::string& soundOpt,
+                                   const std::string& targetAudioPath,
+                                   int audioQuality,bool audioHz=false){
+    if(soundOpt=="mute") return videoPath;
+    long n=(long)frames.size();
+    long i=0;
+    return addAudioToVideoFrames(videoPath,n,[&](cv::Mat& m){ if(i>=n) return false; m=frames[i++]; return true; },
+                                 fps,outPath,soundOpt,targetAudioPath,audioQuality,audioHz);
 }
 
 namespace GIF {
@@ -1139,12 +1170,12 @@ static void openExporters(const ProcessConfig& cfg,int W,int H,const std::string
                           const std::string& outDir,std::string& outPath,std::string& silPath,
                           FfmpegWriter& vw,GIF::Encoder& gifEnc){
     if(cfg.mode=="export_video"){
-        outPath=outDir+"/imder_"+ts+".mp4";
-        if(cfg.soundOpt!="mute"){silPath=outDir+"/imder_"+ts+"_silent.mp4";vw.open(silPath,W,H,(double)cfg.fps);}
+        outPath=outDir+"/video_"+ts+".mp4";
+        if(cfg.soundOpt!="mute"){silPath=outDir+"/video_"+ts+"_silent.mp4";vw.open(silPath,W,H,(double)cfg.fps);}
         else vw.open(outPath,W,H,(double)cfg.fps);
         if(!vw.isOpened()) throw std::runtime_error("cannot open video writer - ffmpeg is required for mp4 export");
     } else if(cfg.mode=="export_gif"){
-        outPath=outDir+"/imder_"+ts+".gif";
+        outPath=outDir+"/animation_"+ts+".gif";
         gifEnc.open(outPath,W,H,1000/cfg.fps);
     }
 }
@@ -1165,7 +1196,7 @@ static void finishExport(const ProcessConfig& cfg,const std::string& outPath,con
             onFinish("Saved to "+fin);
         } else onFinish("Saved to "+outPath);
     } else if(cfg.mode=="export_image"){
-        std::string ip=outDir+"/imder_"+ts+".png";
+        std::string ip=outDir+"/image_"+ts+".png";
         if(finalFrame.empty()) throw std::runtime_error("no frame to save");
         cv::Mat bgr;
         cv::cvtColor(finalFrame,bgr,cv::COLOR_RGB2BGR);
@@ -1201,8 +1232,8 @@ static void processCore(const ProcessConfig& cfg,
         int W=0;
         makeProcImages(cfg,baseImg,tgtImg,W);
         int H=baseImg.rows,N=W*H;
-        if(cfg.onTotal) cfg.onTotal(302);
-        int totalFrames=302;
+        if(cfg.onTotal) cfg.onTotal(300);
+        int totalFrames=300;
         std::string ts=imderTimestamp();
 
         if(cfg.algo=="reborn"){
@@ -1512,10 +1543,10 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
     std::string ts=imderTimestamp();
     std::string videoPath,silPath,gifPath;
     if(wantMp4){
-        videoPath=outDir+"/imder_"+ts+".mp4";
-        if(soundOpt!="mute") silPath=outDir+"/imder_"+ts+"_silent.mp4";
+        videoPath=outDir+"/video_"+ts+".mp4";
+        if(soundOpt!="mute") silPath=outDir+"/video_"+ts+"_silent.mp4";
     }
-    if(wantGif) gifPath=outDir+"/imder_"+ts+".gif";
+    if(wantGif) gifPath=outDir+"/animation_"+ts+".gif";
 
     FfmpegReader rdB,rdT;
     cv::Mat bImg,tImg;
@@ -1524,7 +1555,16 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
     if(tIsVid){ if(!rdT.open(tgtPath)) throw std::runtime_error("cannot read target video: "+tgtPath); }
     else { tImg=readImageSafe(tgtPath); if(tImg.empty()) throw std::runtime_error("Could not load target image: "+tgtPath); }
 
-    double fps2=bIsVid?rdB.fps:(tIsVid?rdT.fps:30.0);
+    double fps2=30.0;
+    VideoInfo vb,vt;
+    if(bIsVid) vb=probeVideoInfo(basePath);
+    if(tIsVid) vt=probeVideoInfo(tgtPath);
+    if(bIsVid&&tIsVid){
+        double fa=vb.ok?vb.fps:rdB.fps,fb=vt.ok?vt.fps:rdT.fps;
+        fps2=((double)vb.frames*fa<=(double)vt.frames*fb)?fa:fb;
+    }
+    else if(bIsVid) fps2=vb.ok?vb.fps:rdB.fps;
+    else if(tIsVid) fps2=vt.ok?vt.fps:rdT.fps;
     if(fps2<=0||fps2>1000) fps2=30.0;
 
     int bw=bIsVid?rdB.w:bImg.cols, bh=bIsVid?rdB.h:bImg.rows;
@@ -1534,11 +1574,9 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
     if(procRes<1) procRes=1;
 
     int estTotal=0;
-    if(bIsVid&&tIsVid){
-        VideoInfo a=probeVideoInfo(basePath),b=probeVideoInfo(tgtPath);
-        estTotal=std::min(a.frames,b.frames);
-    } else if(bIsVid) estTotal=probeVideoInfo(basePath).frames;
-    else if(tIsVid) estTotal=probeVideoInfo(tgtPath).frames;
+    if(bIsVid&&tIsVid) estTotal=std::min(vb.ok?vb.frames:0,vt.ok?vt.frames:0);
+    else if(bIsVid) estTotal=vb.ok?vb.frames:0;
+    else if(tIsVid) estTotal=vt.ok?vt.frames:0;
     if(onTotal) onTotal(std::max(1,estTotal));
 
     FfmpegWriter vw;
@@ -1581,7 +1619,10 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
     if(wantMp4&&soundOpt!="mute"){
         if(onProgress) onProgress(99,"muxing audio (ffmpeg)");
         std::string tgtA=(soundOpt=="target-sound")?tgtPath:"";
-        std::string fin=addAudioToVideo(silPath,keepForSound,fps2,videoPath,soundOpt,tgtA,audioQuality,audioHz);
+        long keepIdx=0;
+        std::string fin=addAudioToVideoFrames(silPath,idx,
+            [&](cv::Mat& m){ if(keepIdx>=(long)keepForSound.size()) return false; m=keepForSound[keepIdx++]; return true; },
+            fps2,videoPath,soundOpt,tgtA,audioQuality,audioHz);
         remove(silPath.c_str());
         if(fin==silPath) throw std::runtime_error("audio mux failed - mp4 export produced no output");
         videoPath=fin;
@@ -1594,26 +1635,58 @@ static void processVideoStream(const std::string& basePath,const std::string& tg
     result.gifPath=gifPath;
 }
 
+static std::string cliTrim(const std::string& s){
+    size_t a=s.find_first_not_of(" \t\r\n");
+    if(a==std::string::npos) return "";
+    size_t b=s.find_last_not_of(" \t\r\n");
+    return s.substr(a,b-a+1);
+}
+
+static std::string cliInputLine(const char* prompt){
+    printf("%s",prompt);fflush(stdout);
+    std::string line;
+    if(!std::getline(std::cin,line)){printf("\nOperation cancelled.\n");exit(0);}
+    return cliTrim(line);
+}
+
+static bool cliParseInt(const std::string& s,int& out){
+    if(s.empty()) return false;
+    char* e=nullptr;
+    long v=strtol(s.c_str(),&e,10);
+    if(e==s.c_str()||*e!='\0') return false;
+    out=(int)v;return true;
+}
+
+static std::string cliBaseName(const std::string& p){
+    size_t d=p.find_last_of("/\\");
+    return d==std::string::npos?p:p.substr(d+1);
+}
+
+static const std::string EQ60(60,'=');
+
 static bool validateMediaFile(const std::string& path){
-    if(!QFile::exists(QString::fromStdString(path))){fprintf(stderr,"Error: File not found: %s\n",path.c_str());return false;}
+    if(!QFile::exists(QString::fromStdString(path))){printf("Error: File not found: %s\n",path.c_str());return false;}
     static const char* E[]={".png",".jpg",".jpeg",".webp",".mp4",".avi",".mov",".mkv",".flv",".wmv"};
-    size_t d=path.rfind('.');if(d==std::string::npos){fprintf(stderr,"Error: No file extension.\n");return false;}
-    std::string e=path.substr(d);std::transform(e.begin(),e.end(),e.begin(),::tolower);
+    size_t d=path.rfind('.');
+    std::string e=(d==std::string::npos)?std::string():path.substr(d);
+    std::transform(e.begin(),e.end(),e.begin(),::tolower);
     for(auto x:E) if(e==x) return true;
-    fprintf(stderr,"Error: Invalid file format. Supported: png jpg jpeg webp mp4 avi mov mkv flv wmv\n");
+    printf("Error: Invalid file format. Supported formats: .png, .jpg, .jpeg, .webp, .mp4, .avi, .mov, .mkv, .flv, .wmv\n");
     return false;
 }
 
-static void printProgressBar(int iter,int total,const char* prefix="Progress:",int length=40){
+static void printProgressBar(int iter,int total,const std::string& prefix="Progress:"){
     if(total<=0) return;
     if(iter<0) iter=0;
     if(iter>total) iter=total;
     float pct=100.f*(float)iter/(float)total;
-    int filled=(int)((float)length*iter/total);
-    std::string bar(filled,'#');
-    bar+=std::string(length-filled,'-');
-    fprintf(stderr,"\r%s [%s] %3.0f%%",prefix,bar.c_str(),pct);
-    if(iter>=total) fprintf(stderr,"\n");
+    int filled=(int)((long long)50*iter/total);
+    std::string bar;
+    for(int i=0;i<filled;i++) bar+="\xE2\x96\x88";
+    bar+=std::string(50-filled,'-');
+    printf("\r%s |%s| %.1f%%",prefix.c_str(),bar.c_str(),pct);
+    fflush(stdout);
+    if(iter>=total) printf("\n");
 }
 
 static void printBanner(){
@@ -1623,90 +1696,308 @@ static void printBanner(){
     "  ██    ██ ████ ██ ██   ██ █████   ██████  ",
     "  ██    ██  ██  ██ ██   ██ ██      ██   ██ ",
     "██████  ██      ██ ██████  ███████ ██   ██"};
-    printf("\n");
+    printf("\033[97m");
     for(const char* l:B) printf("%s\n",l);
-    printf("%s\n",std::string(60,'=').c_str());
+    printf("\033[0m\n");
+    printf("%s\n",EQ60.c_str());
+    printf("Interactive CLI Mode - Image Blender Tool\n");
+    printf("%s\n",EQ60.c_str());
     fflush(stdout);
 }
 
-static bool cliHasFormat(const std::vector<std::string>& v,const char* f){
-    return std::find(v.begin(),v.end(),std::string(f))!=v.end();
-}
-
-static std::vector<std::string> cliImageProcess(const std::string& basePath,const std::string& tgtPath,
-                                                const std::string& outDir,const std::vector<std::string>& formats,
-                                                const std::string& algo,int resolution,
-                                                const std::string& soundOpt,int audioQuality,bool audioHz){
-    std::vector<std::string> outs;
-    bool running=true;
-    struct Pass{const char* mode;const char* fmt;};
-    std::vector<Pass> want;
-    if(cliHasFormat(formats,"png")) want.push_back({"export_image","png"});
-    if(cliHasFormat(formats,"gif")) want.push_back({"export_gif","gif"});
-    if(cliHasFormat(formats,"mp4")) want.push_back({"export_video","mp4"});
+static void cliImageProcess(const std::string& basePath,const std::string& tgtPath,
+                            const std::string& algo,int resolution,
+                            const std::string& soundOpt,int audioQuality){
+    const std::string outDir="results";
+    QDir().mkpath(QString::fromStdString(outDir));
+    struct Pass{const char* mode;const char* desc;};
+    const Pass passes[]={{"export_image","Frame (PNG)"},{"export_gif","GIF"},{"export_video","Animation (MP4)"}};
     int passNo=0;
-    for(auto& p:want){
-        fprintf(stderr,"[imder] pass %d/%d %s\n",++passNo,(int)want.size(),p.fmt);
+    for(auto& p:passes){
+        fprintf(stderr,"[imder] pass %d/3 %s\n",++passNo,p.mode);
+        bool running=true;
         ProcessConfig cfg;
-        cfg.basePath=basePath;cfg.tgtPath=tgtPath;
-        cfg.mode=p.mode;cfg.algo=algo;cfg.outDir=outDir;
-        cfg.resolution=resolution;cfg.soundOpt=soundOpt;cfg.audioQuality=audioQuality;cfg.audioHz=audioHz;
+        cfg.basePath=basePath;cfg.tgtPath=tgtPath;cfg.mode=p.mode;cfg.algo=algo;cfg.outDir=outDir;
+        cfg.resolution=resolution;cfg.soundOpt=soundOpt;cfg.audioQuality=audioQuality;
         cfg.fps=30;cfg.running=&running;
+        std::string err;bool failed=false;
         processCore(cfg,
-            [](int v,const std::string&){ printProgressBar(v,100); },
+            [&](int v,const std::string&){ printProgressBar(v,100,"  "+std::string(p.desc)+":"); },
             [](const QImage&){},
-            [&](const std::string& m){
-                if(m.rfind("Saved to ",0)==0) outs.push_back(m.substr(9));
-            },
-            [&](const std::string& e){ throw std::runtime_error(e); });
+            [&](const std::string& m){ printf("  %s: %s\n",p.desc,m.c_str());fflush(stdout); },
+            [&](const std::string& e){ failed=true;err=e; });
+        if(failed){
+            printf("  Error: %s\n",err.c_str());fflush(stdout);
+            throw std::runtime_error(err);
+        }
+        printf("\n");
     }
-    return outs;
 }
 
-static std::vector<std::string> cliVideoProcess(const std::string& basePath,const std::string& tgtPath,
-                                                const std::string& outDir,const std::vector<std::string>& formats,
-                                                const std::string& algo,int resolution,
-                                                const std::string& soundOpt,int audioQuality,bool audioHz){
-    bool wantMp4=cliHasFormat(formats,"mp4"),wantGif=cliHasFormat(formats,"gif");
-    VideoStreamResult r;
-    processVideoStream(basePath,tgtPath,algo,resolution,soundOpt,audioQuality,audioHz,
-                       outDir,wantMp4,wantGif,false,
-                       [](int pct,const std::string&){ printProgressBar(pct,100); },
-                       {},nullptr,nullptr,r);
-    std::vector<std::string> outs;
-    if(!r.mp4Path.empty()) outs.push_back(r.mp4Path);
-    if(!r.gifPath.empty()) outs.push_back(r.gifPath);
-    return outs;
+static void cliVideoProcess(const std::string& basePath,const std::string& tgtPath,
+                            const std::string& algo,int resolution,
+                            const std::string& soundOpt,int audioQuality){
+    printf("\nProcessing: %s -> %s\n",cliBaseName(basePath).c_str(),cliBaseName(tgtPath).c_str());
+    printf("Algorithm: %s\n",algo.c_str());
+    printf("Resolution: %dx%d\n",resolution,resolution);
+    if(soundOpt=="target-sound") printf("Sound: %s (quality: %d%%)\n",soundOpt.c_str(),audioQuality);
+    else printf("Sound: %s\n",soundOpt.c_str());
+    printf("\n");
+    fflush(stdout);
+    const std::string outDir="results";
+    QDir().mkpath(QString::fromStdString(outDir));
+    bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
+
+    int bc=1,tc=1;double bfps=30.0,tfps=30.0;
+    FfmpegReader rdB,rdT;
+    cv::Mat bImg,tImg;
+    if(bIsVid){
+        printf("Exploring Base frames:\n");
+        if(!rdB.open(basePath)) throw std::runtime_error("cannot read base video: "+basePath);
+        bfps=rdB.fps;
+        printf("exploring Base frames:\n");
+        cv::Mat f;long n=0;
+        while(rdB.read(f)){n++;if(n==1||n%10==0){printf("  %ld",n);fflush(stdout);}}
+        if(n%10!=0){printf("  %ld",n);fflush(stdout);}
+        printf("\n");
+        printf("Base Frames = %ld\n",n);
+        bc=(int)std::max(1L,n);
+        rdB.release();
+    } else {
+        printf("Base is image, 1 frame\n");
+        bImg=readImageSafe(basePath);
+        if(bImg.empty()){printf("Error: Could not load image %s\n",basePath.c_str());fflush(stdout);exit(1);}
+    }
+    if(tIsVid){
+        printf("\nExploring Target frames:\n");
+        if(!rdT.open(tgtPath)) throw std::runtime_error("cannot read target video: "+tgtPath);
+        tfps=rdT.fps;
+        printf("exploring Target frames:\n");
+        cv::Mat f;long n=0;
+        while(rdT.read(f)){n++;if(n==1||n%10==0){printf("  %ld",n);fflush(stdout);}}
+        if(n%10!=0){printf("  %ld",n);fflush(stdout);}
+        printf("\n");
+        printf("Target Frames = %ld\n",n);
+        tc=(int)std::max(1L,n);
+        rdT.release();
+    } else {
+        printf("Target is image, 1 frame\n");
+        tImg=readImageSafe(tgtPath);
+        if(tImg.empty()){printf("Error: Could not load image %s\n",tgtPath.c_str());fflush(stdout);exit(1);}
+    }
+    fflush(stdout);
+
+    int total=1;double fps=30.0,duration=1.0;
+    if(bIsVid&&tIsVid){
+        total=std::min(bc,tc);
+        printf("\nShorter video has %d frames\n",total);
+        int step=std::max(1,total/20);
+        if(bc>total){
+            printf("\nExtracting first %d frames from Base:\n",total);
+            for(int i=0;i<total;i++)
+                if((i+1)%step==0||i==0||i==total-1)
+                    printf("Extracting frames from Base %d/%d %.1f%%\n",i+1,total,100.0*(double)(i+1)/total);
+        }
+        if(tc>total){
+            printf("\nExtracting first %d frames from Target:\n",total);
+            for(int i=0;i<total;i++)
+                if((i+1)%step==0||i==0||i==total-1)
+                    printf("Extracting frames from Target %d/%d %.1f%%\n",i+1,total,100.0*(double)(i+1)/total);
+        }
+        fps=((double)bc*bfps<=(double)tc*tfps)?bfps:tfps;
+        duration=(double)total/fps;
+    } else if(bIsVid){
+        total=bc;
+        printf("\nBase video has %d frames\n",total);
+        printf("Target is image, will be repeated for each frame\n");
+        fps=bfps;duration=(double)total/fps;
+    } else if(tIsVid){
+        total=tc;
+        printf("\nTarget video has %d frames\n",total);
+        printf("Base is image, will be repeated for each frame\n");
+        fps=tfps;duration=(double)total/fps;
+    }
+    if(fps<=0||fps>1000) fps=30.0;
+
+    printf("\nVideo processing starts:\n");
+    fflush(stdout);
+    QTemporaryDir cache;
+    if(!cache.isValid()) throw std::runtime_error("cannot create frame cache dir");
+    std::string cd=cache.path().toStdString();
+    auto cachePath=[&](long i){char nm[64];snprintf(nm,sizeof(nm),"/frame_%06ld.rgb",i);return cd+nm;};
+    if(bIsVid&&!rdB.open(basePath)) throw std::runtime_error("cannot read base video: "+basePath);
+    if(tIsVid&&!rdT.open(tgtPath)) throw std::runtime_error("cannot read target video: "+tgtPath);
+    cv::Mat bF,tF;
+    int W=0,H=0;
+    long processed=0;
+    for(int i=0;i<total;i++){
+        if(bIsVid&&!rdB.read(bF)) break;
+        if(tIsVid&&!rdT.read(tF)) break;
+        cv::Mat& bU=bIsVid?bF:bImg;
+        cv::Mat& tU=tIsVid?tF:tImg;
+        cv::Mat proc=processFramePair(bU,tU,algo,resolution);
+        if(W==0){W=proc.cols;H=proc.rows;}
+        FILE* cf=fopen(cachePath(i).c_str(),"wb");
+        if(!cf){rdB.release();rdT.release();throw std::runtime_error("cannot write frame cache");}
+        fwrite(proc.data,1,(size_t)proc.total()*proc.elemSize(),cf);
+        fclose(cf);
+        processed++;
+        printf("Frame %d/%d %.1f%%\n",i+1,total,100.0*(double)(i+1)/total);
+    }
+    rdB.release();rdT.release();
+    printf("\nframes processing finished\n");
+    fflush(stdout);
+    if(processed<=0) throw std::runtime_error("no frames processed");
+
+    std::string ts=imderTimestamp();
+    std::string vid=outDir+"/video_"+ts+".mp4";
+    std::string gif=outDir+"/animation_"+ts+".gif";
+    std::string sil;
+    if(soundOpt!="mute"){
+        sil=outDir+"/video_"+ts+"_silent.mp4";
+        printf("\nCompiling silent video:\n");
+    } else printf("\nCompiling Frames to export:\n");
+    fflush(stdout);
+    FfmpegWriter vw;
+    if(!vw.open(sil.empty()?vid:sil,W,H,fps))
+        throw std::runtime_error("cannot open video writer - ffmpeg is required for mp4 export");
+    long step10=std::max(1L,processed/10);
+    auto loadCache=[&](long i,cv::Mat& frm){
+        frm=cv::Mat(H,W,CV_8UC3);
+        FILE* cf=fopen(cachePath(i).c_str(),"rb");
+        if(!cf) return false;
+        size_t got=fread(frm.data,1,(size_t)W*H*3,cf);
+        fclose(cf);
+        return got==(size_t)W*H*3;
+    };
+    for(long i=0;i<processed;i++){
+        cv::Mat frm;
+        if(!loadCache(i,frm)){vw.release();throw std::runtime_error("frame cache read failed");}
+        cv::Mat bgr;cv::cvtColor(frm,bgr,cv::COLOR_RGB2BGR);
+        vw.write(bgr);
+        if((i+1)%step10==0||i==0||i==processed-1)
+            printf("Frame %ld/%ld = %.1f%%\n",i+1,processed,100.0*(double)(i+1)/processed);
+    }
+    vw.release();
+    if(soundOpt!="mute"){
+        long ai=0;
+        std::string fin=addAudioToVideoFrames(sil,processed,
+            [&](cv::Mat& m){return loadCache(ai++,m);},
+            fps,vid,soundOpt,(soundOpt=="target-sound")?tgtPath:std::string(),audioQuality,false);
+        remove(sil.c_str());
+        if(fin==sil) throw std::runtime_error("audio mux failed - mp4 export produced no output");
+        vid=fin;
+    }
+    printf("\nexport result as gif:\n");
+    fflush(stdout);
+    GIF::Encoder gifEnc;
+    gifEnc.open(gif,W,H,std::max(10,(int)(1000.0/fps)));
+    for(long i=0;i<processed;i++){
+        cv::Mat frm;
+        if(!loadCache(i,frm)) throw std::runtime_error("frame cache read failed");
+        gifEnc.writeFrame(frm);
+        if((i+1)%step10==0||i==0||i==processed-1)
+            printf("export result as gif %.1f%%\n",100.0*(double)(i+1)/processed);
+    }
+    gifEnc.close();
+    printf("\nprocessing finished, results saved to results/\n");
+    printf("Video: %s\n",cliBaseName(vid).c_str());
+    printf("GIF: %s\n",cliBaseName(gif).c_str());
+    printf("Duration: %.1fs, FPS: %.1f, Frames: %ld\n",duration,fps,processed);
+    fflush(stdout);
 }
 
-static std::vector<std::string> cliProcessAndExport(const std::string& basePath,const std::string& tgtPath,
-                                                    const std::string& outDir,const std::vector<std::string>& formats,
-                                                    const std::string& algo,int resolution,
-                                                    const std::string& soundOpt,int audioQuality,bool audioHz){
+static void cliProcessAndExport(const std::string& basePath,const std::string& tgtPath,
+                                const std::string& algo,int resolution,
+                                const std::string& soundOpt,int audioQuality){
     bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
     if(soundOpt=="target-sound"&&!tIsVid){
-        throw std::runtime_error("Target sound requires video target");
+        printf("Error: Target Sound option requires target to be a video file.\n");fflush(stdout);
+        throw std::runtime_error("Target Sound option requires target to be a video file.");
     }
     if(bIsVid||tIsVid){
-        if(cliHasFormat(formats,"png")){
-            throw std::runtime_error("PNG not supported for video input");
+        if(algo=="fusion"){
+            printf("Error: Fusion algorithm cannot be used with video files.\n");fflush(stdout);
+            throw std::runtime_error("Fusion algorithm cannot be used with video files.");
         }
-        if(algo!="shuffle"&&algo!="merge"&&algo!="missform"){
-            throw std::runtime_error("Video only supports: shuffle, merge, missform");
+        std::string a=algo;
+        if(a!="merge"&&a!="shuffle"&&a!="missform"){
+            printf("Warning: Video processing only supports merge, shuffle, or missform algorithms. Using merge.\n");
+            a="merge";
         }
-        return cliVideoProcess(basePath,tgtPath,outDir,formats,algo,resolution,soundOpt,audioQuality,audioHz);
-    }
-    if(algo!="shuffle"&&algo!="merge"&&algo!="missform"&&algo!="fusion"){
-        throw std::runtime_error("Valid algorithms: shuffle, merge, missform, fusion");
-    }
-    return cliImageProcess(basePath,tgtPath,outDir,formats,algo,resolution,soundOpt,audioQuality,audioHz);
+        cliVideoProcess(basePath,tgtPath,a,resolution,soundOpt,audioQuality);
+    } else cliImageProcess(basePath,tgtPath,algo,resolution,soundOpt,audioQuality);
 }
 
-struct CliSoundChoice {
-    std::string opt="mute";
-    int quality=30;
-    bool hz=false;
-};
+static std::string selectAlgorithm(){
+    printf("\nSelect Algorithm:\n");
+    printf("1. Shuffle   - Randomly swap pixels between images\n");
+    printf("2. Merge     - Blend images with grayscale sorting\n");
+    printf("3. Missform  - Morph between binary pixel positions\n");
+    printf("4. Fusion    - Create animation with pixel sorting\n");
+    while(true){
+        std::string c=cliInputLine("\nEnter your choice (1-4): ");
+        if(c=="1") return "shuffle";
+        if(c=="2") return "merge";
+        if(c=="3") return "missform";
+        if(c=="4") return "fusion";
+        printf("Invalid choice. Please enter 1, 2, 3, or 4.\n");
+    }
+}
+
+static int selectResolution(){
+    printf("\nSelect Resolution:\n");
+    printf("1. 128x128\n");
+    printf("2. 256x256\n");
+    printf("3. 512x512\n");
+    printf("4. 768x768\n");
+    printf("5. 1024x1024\n");
+    printf("6. 2048x2048\n");
+    static const int R[]={128,256,512,768,1024,2048};
+    while(true){
+        std::string c=cliInputLine("\nEnter your choice (1-6): ");
+        if(c.size()==1&&c[0]>='1'&&c[0]<='6') return R[c[0]-'1'];
+        printf("Invalid choice. Please enter 1, 2, 3, 4, 5, or 6.\n");
+    }
+}
+
+static int selectTargetSoundQuality(){
+    printf("\nSelect Target Sound Quality (1-10, where 10=100%% original quality, 3=30%% default):\n");
+    printf("1. 10%% (lowest quality)\n");
+    printf("2. 20%%\n");
+    printf("3. 30%% (default)\n");
+    printf("4. 40%%\n");
+    printf("5. 50%%\n");
+    printf("6. 60%%\n");
+    printf("7. 70%%\n");
+    printf("8. 80%%\n");
+    printf("9. 90%%\n");
+    printf("10. 100%% (original quality)\n");
+    while(true){
+        std::string c=cliInputLine("Enter your choice (1-10, default 3): ");
+        if(c.empty()) return 30;
+        int q=0;
+        if(cliParseInt(c,q)){
+            if(q>=1&&q<=10) return q*10;
+            printf("Please enter a number between 1 and 10.\n");
+        } else printf("Please enter a valid number.\n");
+    }
+}
+
+static void selectSoundOption(bool targetIsVideo,std::string& opt,int& quality){
+    printf("\nSelect Sound Option:\n");
+    printf("1. Mute (default)\n");
+    printf("2. Sound (generate audio from pixel colors)\n");
+    if(targetIsVideo) printf("3. Target Sound (use audio from target video)\n");
+    while(true){
+        std::string p=std::string("Enter your choice (1-2")+(targetIsVideo?", 3":"")+", default 1): ";
+        std::string c=cliInputLine(p.c_str());
+        if(c.empty()||c=="1"){opt="mute";quality=30;return;}
+        if(c=="2"){opt="sound";quality=30;return;}
+        if(c=="3"&&targetIsVideo){opt="target-sound";quality=selectTargetSoundQuality();return;}
+        printf("Invalid choice. Please enter 1, 2%s.\n",targetIsVideo?", or 3":"");
+    }
+}
 
 static void interactiveCLI(){
     while(true){
@@ -1715,113 +2006,54 @@ static void interactiveCLI(){
         fflush(stdout);
         std::string basePath;
         while(true){
-            printf("Base: ");fflush(stdout);
-            std::string line;std::getline(std::cin,line);
-            while(!line.empty()&&(line.back()=='\r'||line.back()==' ')) line.pop_back();
-            if(line.empty()){printf("Not found\n");continue;}
-            if(QFile::exists(QString::fromStdString(line))&&validateMediaFile(line)){basePath=line;break;}
-            printf("Not found\n");
+            std::string line=cliInputLine("Enter base media path (or drag & drop file): ");
+            if(validateMediaFile(line)){basePath=line;break;}
+            printf("Invalid input. Please try again.\n");
         }
         std::string tgtPath;
         while(true){
-            printf("Target: ");fflush(stdout);
-            std::string line;std::getline(std::cin,line);
-            while(!line.empty()&&(line.back()=='\r'||line.back()==' ')) line.pop_back();
-            if(line.empty()){printf("Not found\n");continue;}
-            if(QFile::exists(QString::fromStdString(line))&&validateMediaFile(line)){tgtPath=line;break;}
-            printf("Not found\n");
+            std::string line=cliInputLine("Enter target media path (or drag & drop file): ");
+            if(validateMediaFile(line)){tgtPath=line;break;}
+            printf("Invalid input. Please try again.\n");
         }
         bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
-
-        printf("\nAlgorithm:\n");
-        std::vector<std::string> opts;
-        if(bIsVid||tIsVid) opts={"merge","shuffle","missform"};
-        else opts={"shuffle","merge","missform","fusion"};
-        for(size_t i=0;i<opts.size();i++) printf("%zu. %s\n",i+1,opts[i].c_str());
-        printf("Select: ");fflush(stdout);
-        std::string c;std::getline(std::cin,c);
-        std::string algo=opts[0];
-        if(!c.empty()&&c.find_first_not_of("0123456789")==std::string::npos){
-            int ci=atoi(c.c_str());
-            if(ci>=1&&ci<=(int)opts.size()) algo=opts[ci-1];
-        }
-
-        printf("\nResolution (1-16384):\n");
-        printf("Res: ");fflush(stdout);
-        std::string rl;std::getline(std::cin,rl);
-        int res=512;
-        if(!rl.empty()){
-            if(rl.find_first_not_of("0123456789")==std::string::npos){
-                res=atoi(rl.c_str());
-                if(res<1||res>16384){printf("Invalid resolution, using 512\n");res=512;}
-            } else printf("Invalid resolution, using 512\n");
-        }
-
-        printf("\nSound (mute/gen%s):\n",tIsVid?"/target":"");
-        printf("Sound: ");fflush(stdout);
-        std::string sl;std::getline(std::cin,sl);
-        std::string snd=sl.empty()?"mute":sl;
-        CliSoundChoice sndChoice;
-        if(snd!="mute"&&snd!="gen"&&snd!="target"){printf("Invalid sound option '%s', using mute\n",snd.c_str());snd="mute";}
-        if(snd=="target"&&!tIsVid){printf("Invalid sound option '%s', using mute\n",snd.c_str());snd="mute";}
-        if(snd=="target"){
-            printf("\nQuality (sq 1-10 OR sq_hz 8000-192000):\n");
-            printf("Quality: ");fflush(stdout);
-            std::string ql;std::getline(std::cin,ql);
-            if(!ql.empty()&&ql.find_first_not_of("0123456789")==std::string::npos){
-                int val=atoi(ql.c_str());
-                if(val>=1&&val<=10) sndChoice.quality=val*10;
-                else if(val>=8000&&val<=192000) sndChoice.hz=true,sndChoice.quality=val;
-                else printf("Invalid quality, using default\n");
-            } else if(!ql.empty()) printf("Invalid quality, using default\n");
-        }
-
-        printf("\nResults (space separated):\n");
-        if(bIsVid||tIsVid) printf("Valid: gif mp4\n");
-        else printf("Valid: png gif mp4\n");
-        printf("Formats: ");fflush(stdout);
-        std::string fl;std::getline(std::cin,fl);
-        std::vector<std::string> formats;
-        {
-            std::istringstream iss(fl);
-            std::string tok;
-            while(iss>>tok){
-                std::transform(tok.begin(),tok.end(),tok.begin(),::tolower);
-                formats.push_back(tok);
-            }
-        }
-        if(formats.empty()){printf("No formats specified, using mp4\n");formats={"mp4"};}
-
-        printf("Result folder: ");fflush(stdout);
-        std::string ol;std::getline(std::cin,ol);
-        std::string outDir=ol.empty()?"results":ol;
-
-        printf("\nProcessing...\n");
+        std::string algo;
+        if(bIsVid||tIsVid){
+            printf("\nVideo mode detected. Select algorithm:\n");
+            printf("1. Merge (default)\n");
+            printf("2. Shuffle\n");
+            printf("3. Missform\n");
+            std::string c=cliInputLine("Enter your choice (1-3, default 1): ");
+            if(c=="2") algo="shuffle";
+            else if(c=="3") algo="missform";
+            else algo="merge";
+            if(bIsVid&&tIsVid) printf("Both files are videos. Will process frame-by-frame.\n");
+            else if(bIsVid) printf("Base is video, target is image. Will process each frame with target image.\n");
+            else printf("Base is image, target is video. Will process base image with each frame.\n");
+        } else algo=selectAlgorithm();
+        int res=selectResolution();
+        std::string snd;int sq=30;
+        selectSoundOption(tIsVid,snd,sq);
+        printf("\n--- Processing ---\n");
         try{
-            bool wantVid=isVideoFile(basePath)||isVideoFile(tgtPath);
-            for(auto& f:formats){
-                if(f!="png"&&f!="gif"&&f!="mp4")
-                    throw std::runtime_error("Invalid format '"+f+"'. Valid: png, gif, mp4");
-            }
-            if(wantVid&&snd=="target"&&!tIsVid)
-                throw std::runtime_error("Target sound requires video target");
-            std::string soundOpt=snd=="gen"?"sound":(snd=="target"?"target-sound":"mute");
-            auto files=cliProcessAndExport(basePath,tgtPath,outDir,formats,algo,res,soundOpt,
-                                           sndChoice.quality,sndChoice.hz);
-            printf("Done:\n");
-            for(auto& f:files) printf("  %s\n",f.c_str());
+            cliProcessAndExport(basePath,tgtPath,algo,res,snd,sq);
         }catch(const std::exception& e){
             printf("Error: %s\n",e.what());
         }
-
-        printf("\n1. Again\n2. Exit\n");
+        printf("\n--- What's Next? ---\n");
+        printf("1. Blend Again\n");
+        printf("2. Exit\n");
         while(true){
-            printf("Choice: ");fflush(stdout);
-            std::string n;std::getline(std::cin,n);
-            if(n=="2") return;
-            if(n=="1") break;
+            std::string c=cliInputLine("\nEnter your choice (1-2): ");
+            if(c=="1"){printf("\n%s\n\n",EQ60.c_str());break;}
+            if(c=="2"){
+                printf("\nThank you for using IMDER! Goodbye!\n");
+                printf("Results saved to: results/\n");
+                fflush(stdout);
+                exit(0);
+            }
+            printf("Invalid choice. Please enter 1 or 2.\n");
         }
-        printf("\n============================================================\n");
     }
 }
 
@@ -2650,7 +2882,7 @@ public:
         tuneComboPopup(fpsCombo);
         auto* sndLbl=new QLabel("Sound:"); sndLbl->setStyleSheet(subtitleLblStyle());
         soundCombo=new QComboBox();
-        soundCombo->addItems({"Mute","Gen","Target"});
+        soundCombo->addItems({"Mute","Sound","Target Sound"});
         soundCombo->setStyleSheet(comboStyle()); soundCombo->setMinimumWidth(90);
         tuneComboPopup(soundCombo);
         auto* qLbl=new QLabel("Quality:"); qLbl->setStyleSheet(subtitleLblStyle());
@@ -2661,7 +2893,7 @@ public:
         tuneComboPopup(qualityCombo);
         qualityCombo->setEnabled(false);
         connect(soundCombo,&QComboBox::currentTextChanged,this,[this](const QString& t){
-            qualityCombo->setEnabled(t=="Target");
+            qualityCombo->setEnabled(t=="Target Sound");
         });
         headerLo->addWidget(modeLbl);headerLo->addWidget(modeCombo);
         headerLo->addWidget(resLbl);headerLo->addWidget(resCombo);
@@ -2865,7 +3097,7 @@ public slots:
         QString mode=modeCombo->currentText().toLower();
         if(mode=="drawer") return !targetPanel->filePath.isEmpty();
         if(basePanel->filePath.isEmpty()||targetPanel->filePath.isEmpty()) return false;
-        if(soundCombo->currentText()=="Target"&&!targetPanel->isVideo){
+        if(soundCombo->currentText()=="Target Sound"&&!targetPanel->isVideo){
             QMessageBox::warning(this,"Sound Option","Target sound requires a video target.");
             return false;
         }
@@ -2908,7 +3140,7 @@ public slots:
         cfg.fps=currentFps;
         cfg.resolution=resCombo->currentText().split('x')[0].toInt();
         QString snd=soundCombo->currentText();
-        cfg.soundOpt=snd=="Gen"?"sound":(snd=="Target"?"target-sound":"mute");
+        cfg.soundOpt=snd=="Sound"?"sound":(snd=="Target Sound"?"target-sound":"mute");
         cfg.audioQuality=(qualityCombo->currentText().toInt())*10;
         if(cfg.algo=="drawer"){
             cfg.baseImageArray=basePanel->getDrawingArray();
@@ -2998,7 +3230,7 @@ public slots:
         if(mode!="drawer") reverseBtn->setEnabled(!proc);
         modeCombo->setEnabled(!proc); resCombo->setEnabled(!proc);
         fpsCombo->setEnabled(!proc); soundCombo->setEnabled(!proc);
-        qualityCombo->setEnabled(!proc&&soundCombo->currentText()=="Target");
+        qualityCombo->setEnabled(!proc&&soundCombo->currentText()=="Target Sound");
         replayBtn->setEnabled(false);
     }
 
@@ -3032,142 +3264,123 @@ static std::string cliLower(const std::string& s){
     return r;
 }
 
-static bool cliIsDigits(const std::string& s){
-    return !s.empty()&&s.find_first_not_of("0123456789")==std::string::npos;
-}
-
 static void cliUsage(){
-    fprintf(stderr,"usage: imder [-h] -h, --help show this help message and exit\n");
-    fprintf(stderr,"\n");
-    fprintf(stderr,"  base            path to the base image or video\n");
-    fprintf(stderr,"  target          path to the target image or video\n");
-    fprintf(stderr,"  result          result folder for the outputs\n");
-    fprintf(stderr,"\n");
-    fprintf(stderr,"options:\n");
-    fprintf(stderr,"  --results FMT [FMT ...]  output formats, one or more of: png, gif, mp4\n");
-    fprintf(stderr,"  --algo ALGO             shuffle | merge | missform | fusion (default: merge)\n");
-    fprintf(stderr,"  --res RES               resolution 1-16384 (default: 512)\n");
-    fprintf(stderr,"  --sound SOUND           mute | gen | target (default: mute)\n");
-    fprintf(stderr,"  --sq SQ                 sound quality 1-10 (target sound)\n");
-    fprintf(stderr,"  --sq_hz SQ_HZ           sound sample rate 8000-192000 (target sound)\n");
-    fprintf(stderr,"\n");
-    fprintf(stderr,"  imder cli               interactive mode\n");
+    printf("Error: Missing required arguments. Usage:\n");
+    printf("  imder <base_path> <target_path> [algorithm] [resolution] [sound_option] [quality]\n");
+    printf("  imder cli [interactive mode]\n");
+    printf("\nSound options: mute, sound, target-sound\n");
+    printf("Quality: 1-10 (only for target-sound, default 3)\n");
+    fflush(stdout);
 }
 
-static int cliOneShot(int argc,char* argv[]){
-    if(argc<5||std::string(argv[4])=="-h"||std::string(argv[4])=="--help"){
+static int cliOneShot(int argc,char* argv[],int argOffset){
+    if(argc-argOffset<2){
         cliUsage();
         return 1;
     }
-    std::string basePath=argv[1];
-    std::string tgtPath=argv[2];
-    std::string outDir=argv[3];
-    std::vector<std::string> formats;
-    std::string algo="merge";
-    int res=512;
-    std::string sound="mute";
-    bool hasSq=false,hasHz=false;
-    int sq=0,hz=0;
+    std::string basePath=argv[argOffset];
+    std::string tgtPath=argv[argOffset+1];
+    bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
 
-    for(int i=4;i<argc;i++){
-        std::string a=argv[i];
-        if(a=="--results"){
-            bool got=false;
-            for(int j=i+1;j<argc;j++){
-                std::string t=argv[j];
-                if(t.rfind("--",0)==0) break;
-                formats.push_back(cliLower(t));
-                got=true;
-                i=j;
+    std::string algo="merge";
+    if(argc-argOffset>=3){
+        algo=cliLower(argv[argOffset+2]);
+        if(bIsVid||tIsVid){
+            if(algo!="merge"&&algo!="shuffle"&&algo!="missform"){
+                printf("Warning: Video processing only supports merge, shuffle, or missform. Using merge.\n");
+                algo="merge";
             }
-            if(!got){fprintf(stderr,"Error: argument --results: expected at least one argument\n");return 1;}
-        } else if(a=="--algo"&&i+1<argc){
-            algo=cliLower(argv[++i]);
-        } else if(a=="--res"&&i+1<argc){
-            std::string v=argv[++i];
-            if(!cliIsDigits(v)){fprintf(stderr,"Error: argument --res: invalid int value: '%s'\n",v.c_str());return 1;}
-            res=atoi(v.c_str());
-        } else if(a=="--sound"&&i+1<argc){
-            sound=cliLower(argv[++i]);
-        } else if(a=="--sq"&&i+1<argc){
-            std::string v=argv[++i];
-            if(!cliIsDigits(v)){fprintf(stderr,"Error: argument --sq: invalid int value: '%s'\n",v.c_str());return 1;}
-            sq=atoi(v.c_str());hasSq=true;
-        } else if(a=="--sq_hz"&&i+1<argc){
-            std::string v=argv[++i];
-            if(!cliIsDigits(v)){fprintf(stderr,"Error: argument --sq_hz: invalid int value: '%s'\n",v.c_str());return 1;}
-            hz=atoi(v.c_str());hasHz=true;
-        } else if(a=="-h"||a=="--help"){
-            cliUsage();
-            return 0;
         } else {
-            fprintf(stderr,"Error: unrecognized arguments: %s\n",a.c_str());
+            if(algo!="shuffle"&&algo!="merge"&&algo!="missform"&&algo!="fusion"){
+                printf("Error: Invalid algorithm '%s'. Valid options: shuffle, merge, missform, fusion\n",algo.c_str());
+                fflush(stdout);
+                return 1;
+            }
+        }
+    }
+
+    int res=512;
+    if(argc-argOffset>=4){
+        if(!cliParseInt(argv[argOffset+3],res)){
+            printf("Error: Resolution must be a number\n");
+            fflush(stdout);
             return 1;
         }
     }
 
-    if(!QFile::exists(QString::fromStdString(basePath))){fprintf(stderr,"Error: Base file not found: %s\n",basePath.c_str());return 1;}
-    if(!QFile::exists(QString::fromStdString(tgtPath))){fprintf(stderr,"Error: Target file not found: %s\n",tgtPath.c_str());return 1;}
-    if(!QFile::exists(QString::fromStdString(outDir))) QDir().mkpath(QString::fromStdString(outDir));
-    if(formats.empty()){fprintf(stderr,"Error: Results list cannot be empty\n");return 1;}
-    for(auto& f:formats){
-        if(f!="png"&&f!="gif"&&f!="mp4"){fprintf(stderr,"Error: Invalid format '%s'. Valid: png, gif, mp4\n",f.c_str());return 1;}
+    std::string sound="mute";
+    int audioQuality=30;
+    if(argc-argOffset>=5){
+        sound=cliLower(argv[argOffset+4]);
+        if(sound=="target-sound"&&!tIsVid){
+            printf("Error: Target Sound option requires target to be a video file.\n");
+            fflush(stdout);
+            return 1;
+        }
+        if(sound!="mute"&&sound!="sound"&&sound!="target-sound"){
+            printf("Warning: Sound option must be 'mute', 'sound', or 'target-sound'. Using mute.\n");
+            sound="mute";
+        }
+        if(argc-argOffset>=6&&sound=="target-sound"){
+            int q=0;
+            if(cliParseInt(argv[argOffset+5],q)){
+                if(q>=1&&q<=10) audioQuality=q*10;
+                else{
+                    printf("Warning: Quality must be between 1 and 10. Using default 3 (30%%).\n");
+                    audioQuality=30;
+                }
+            } else{
+                printf("Warning: Quality must be a number. Using default 3 (30%%).\n");
+                audioQuality=30;
+            }
+        } else if(argc-argOffset>=6&&sound!="target-sound"){
+            printf("Warning: Quality parameter is only supported for 'target-sound' option. Ignoring.\n");
+        }
     }
-    if(res<1||res>16384){fprintf(stderr,"Error: Resolution must be integer between 1 and 16384\n");return 1;}
-    if(sound!="mute"&&sound!="gen"&&sound!="target"){fprintf(stderr,"Error: Invalid sound option '%s'. Valid: mute, gen, target\n",sound.c_str());return 1;}
-    if(hasSq&&hasHz){fprintf(stderr,"Error: Cannot use both sq and sq_hz. Choose one.\n");return 1;}
-    if(hasSq&&(sq<1||sq>10)){fprintf(stderr,"Error: SQ must be integer between 1 and 10\n");return 1;}
-    if(hasHz&&sound!="target"){fprintf(stderr,"Error: sq_hz only valid with sound='target'\n");return 1;}
-    if(hasHz&&(hz<8000||hz>192000)){fprintf(stderr,"Error: sq_hz must be integer between 8000 and 192000\n");return 1;}
 
-    bool bIsVid=isVideoFile(basePath),tIsVid=isVideoFile(tgtPath);
-    if((bIsVid||tIsVid)&&algo!="shuffle"&&algo!="merge"&&algo!="missform"){
-        fprintf(stderr,"Error: Video only supports: shuffle, merge, missform\n");return 1;}
-    if(!(bIsVid||tIsVid)&&algo!="shuffle"&&algo!="merge"&&algo!="missform"&&algo!="fusion"){
-        fprintf(stderr,"Error: Valid algorithms: shuffle, merge, missform, fusion\n");return 1;}
-    if((bIsVid||tIsVid)&&cliHasFormat(formats,"png")){fprintf(stderr,"Error: PNG not supported for video input\n");return 1;}
-    if(sound=="target"&&!tIsVid){fprintf(stderr,"Error: Target sound requires video target\n");return 1;}
+    printBanner();
+    printf("\nCLI Mode: Processing %s -> %s\n",cliBaseName(basePath).c_str(),cliBaseName(tgtPath).c_str());
+    printf("Algorithm: %s\n",algo.c_str());
+    printf("Resolution: %dx%d\n",res,res);
+    if(sound=="target-sound") printf("Sound: %s (quality: %d%%)\n",sound.c_str(),audioQuality);
+    else printf("Sound: %s\n",sound.c_str());
+    printf("\n");
+    fflush(stdout);
 
-    int audioQuality=hasSq?sq*10:30;
-    bool audioHz=hasHz;
-    if(hasHz) audioQuality=hz;
-    std::string soundOpt=sound=="gen"?"sound":(sound=="target"?"target-sound":"mute");
-
-    auto files=cliProcessAndExport(basePath,tgtPath,outDir,formats,algo,res,soundOpt,audioQuality,audioHz);
-    for(auto& f:files) printf("%s\n",f.c_str());
+    try{
+        cliProcessAndExport(basePath,tgtPath,algo,res,sound,audioQuality);
+    }catch(const std::exception& e){
+        fprintf(stderr,"[imder] pass failed: %s\n",e.what());
+        return 1;
+    }
+    printf("\nAll outputs saved to: results/\n");
+    fflush(stdout);
     return 0;
 }
 
 int main(int argc,char* argv[]){
     attach_parent_console(argc,argv);
-    if(argc==1){
-        QApplication app(argc,argv);
-        app.setStyle("Fusion");
-        applyDarkPalette();
-        QApplication::setWindowIcon(QIcon(":/imder.png"));
-        ImderGUI win;
-        win.show();
-        return app.exec();
-    }
-    std::string a1=argv[1];
-    if(a1=="cli"){
-        if(argc!=2){
-            fprintf(stderr,"Error: cli takes no extra arguments (use one-shot instead)\n");
-            return 1;
-        }
-        interactiveCLI();
-        return 0;
-    }
+    std::string a1=argc>1?argv[1]:"";
     if(a1=="-h"||a1=="--help"||a1=="--version"){
         printf("IMDER v1.3.0\n");
         cliUsage();
         return 0;
     }
-    if(argc<4){
-        cliUsage();
-        return 1;
+    if(a1=="cli"){
+        if(argc==2){
+            interactiveCLI();
+            return 0;
+        }
+        return cliOneShot(argc,argv,2);
     }
-    return cliOneShot(argc,argv);
+    if(argc>=3) return cliOneShot(argc,argv,1);
+    QApplication app(argc,argv);
+    app.setStyle("Fusion");
+    applyDarkPalette();
+    QApplication::setWindowIcon(QIcon(":/imder.png"));
+    ImderGUI win;
+    win.show();
+    return app.exec();
 }
 
 #include "imder.moc"

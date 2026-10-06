@@ -266,7 +266,7 @@ See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 4. Set FPS for image-image animation exports (30/60/90/120/240)
 5. Load base and target media (images or videos)
 6. Apply transforms (rotate/flip) on images if needed
-7. Pick sound (Mute / Gen / Target) with a quality level for video exports
+7. Pick sound (Mute / Sound / Target Sound) with a quality level for video exports
 8. For mask-dependent algorithms, use "Analyze" (As-is or Smart) or the Pen tool (+/- shapes, Clear Shapes)
 9. For Reborn mode, draw and analyze at least one shape on the Base and one on the Target
 10. Click "Start Processing" for the streamed live preview — the frame timeline tracks and scrubs the run
@@ -280,24 +280,24 @@ See **[pip-imder.md](pip-imder.md)** for complete API documentation.
 
 ### CLI Mode (Native Binary)
 
-**Interactive (with the IMDER ASCII banner):**
+**Interactive (with the IMDER banner, menus, and the "What's Next?" loop):**
 ```bash
 imder cli        # or cli.bat / cli.sh from the release package
 ```
 
-**Direct Processing (same syntax as the Python library):**
+**Direct Processing (same syntax as the Python imder.py CLI):**
 ```bash
-# Image processing with specific formats and algorithm
-imder base.jpg target.jpg ./output --results gif mp4 --algo merge --res 1024
+# Image processing — exports Frame (PNG) + GIF + Animation (MP4) into results/
+imder base.jpg target.jpg merge 1024
 
-# Video processing with target audio at a fixed sample rate
-imder video1.mp4 video2.mp4 ./output --results mp4 --sound target --sq_hz 44100
+# Video processing with target audio at 50% quality (quality 1-10)
+imder video1.mp4 video2.mp4 merge 512 target-sound 5
 
-# Free-form resolution and pixel-generated sound
-imder base.png target.png ./output --results png --algo missform --res 900 --sound gen
+# Pixel-generated sound, missform algorithm
+imder base.png target.png missform 900 sound
 ```
 
-Outputs land in the result folder as `imder_<timestamp>.png/.gif/.mp4`.
+Algorithm: shuffle / merge / missform (fusion for image pairs), resolution in pixels, sound: mute / sound / target-sound. Outputs land in `results/` as `image_<timestamp>.png`, `animation_<timestamp>.gif`, and `video_<timestamp>.mp4`.
 
 **First run on Linux?** Run `install.sh` from the package — it creates a desktop entry and the `imder` shell alias.
 

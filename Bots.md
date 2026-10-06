@@ -37,7 +37,7 @@ AI agents typically cannot maintain interactive terminal sessions. Use the follo
 ```bash
 # Option A: the native binary from the releases (no python deps, single small exe)
 # Download IMDER_windows_v1.3.0.zip or imder_linux_v1.3.0_cpp.zip, unzip, then:
-./imder /path/to/base.png /path/to/target.png results --results png gif mp4 --algo shuffle --res 512
+./imder /path/to/base.png /path/to/target.png shuffle 512
 
 # Option B: from the python source
 git clone https://github.com/HAKORADev/IMDER.git && cd IMDER/src
@@ -49,7 +49,7 @@ pip install opencv-python numpy PyQt5 pillow pyfiglet
 python imder.py /path/to/base.png /path/to/target.png shuffle 512
 
 # Chain multiple operations
-./imder base1.png target1.png results --results png --algo merge && ./imder base2.png target2.png results --results png --algo merge
+./imder base1.png target1.png merge && ./imder base2.png target2.png merge
 ```
 
 ---
@@ -139,11 +139,13 @@ fi
 
 AI agents can chain commands using `&&` or `;` in shell environments.
 
-### Basic One-Liner Pattern (Native Binary — v1.3.0, matches the Python library)
+### Basic One-Liner Pattern (Native Binary — v1.3.0, matches the Python imder.py CLI)
 
 ```bash
-./imder <base_path> <target_path> <result_folder> --results png gif mp4 --algo merge --res 512 --sound mute
+./imder <base_path> <target_path> [algorithm] [resolution] [sound_option] [quality]
 ```
+
+Image pairs export Frame (PNG) + GIF + Animation (MP4); runs with a video export MP4 + GIF. Everything lands inside `results/`.
 
 ### Basic One-Liner Pattern (Python Source)
 
@@ -156,19 +158,19 @@ python imder.py <base_path> <target_path> [algorithm] [resolution] [sound_option
 **Multiple image processing operations (native binary):**
 
 ```bash
-./imder image1.png image2.png out --results png --algo shuffle && ./imder image3.png image4.png out --results png --algo merge && ./imder image5.png image6.png out --results gif --algo fusion
+./imder image1.png image2.png shuffle && ./imder image3.png image4.png merge && ./imder image5.png image6.png fusion
 ```
 
 **Video processing with audio (native binary):**
 
 ```bash
-./imder video1.mp4 video2.mp4 out --results mp4 --algo merge --sound target --sq 8 && ./imder photo.png video.mp4 out --results gif mp4 --algo shuffle --sound gen
+./imder video1.mp4 video2.mp4 merge 512 target-sound 8 && ./imder photo.png video.mp4 shuffle 512 sound
 ```
 
 **Batch process with output location:**
 
 ```bash
-cd /workspace && ./imder /data/base.png /data/target.png /data/results --results png gif --algo merge
+cd /workspace && ./imder /data/base.png /data/target.png merge
 ```
 
 ### Interactive Mode (Not Recommended for Bots)
@@ -182,7 +184,7 @@ Interactive mode (`./imder cli`, `cli.bat`, `cli.sh`, or `python imder.py` with 
 ### Syntax (Native Binary — v1.3.0)
 
 ```bash
-./imder <base_path> <target_path> <result_folder> [options]
+./imder <base_path> <target_path> [algorithm] [resolution] [sound_option] [quality]
 ```
 
 ### Parameters (Native Binary)
@@ -191,15 +193,12 @@ Interactive mode (`./imder cli`, `cli.bat`, `cli.sh`, or `python imder.py` with 
 |-----------|-------------|---------|
 | `base_path` | Path to base image or video | Required |
 | `target_path` | Path to target image or video | Required |
-| `result_folder` | Folder for the outputs (created if missing) | Required |
-| `--results` | One or more of `png`, `gif`, `mp4` | Required |
-| `--algo` | `shuffle`, `merge`, `missform`, `fusion` | `merge` |
-| `--res` | Processing resolution, any integer 1-16384 | `512` |
-| `--sound` | `mute`, `gen`, `target` | `mute` |
-| `--sq` | Sound quality 1-10 (target sound bitrate levels) | `3` |
-| `--sq_hz` | Sound sample rate 8000-192000, instead of --sq (target sound) | none |
+| `algorithm` | `shuffle`, `merge`, `missform`, `fusion` (fusion for image pairs only) | `merge` |
+| `resolution` | Processing resolution in pixels | `512` |
+| `sound_option` | `mute`, `sound`, `target-sound` | `mute` |
+| `quality` | Sound quality 1-10, only with `target-sound` | `3` (30%) |
 
-Outputs are named `imder_<timestamp>.<ext>` inside the result folder.
+Image pairs export `image_<timestamp>.png`, `animation_<timestamp>.gif`, and `video_<timestamp>.mp4`; runs with a video export `video_<timestamp>.mp4` and `animation_<timestamp>.gif` — all inside `results/`.
 
 ### Syntax (Python Source)
 
@@ -251,30 +250,30 @@ Used only with `target-sound` option:
 **Image to Image (no audio):**
 
 ```bash
-./imder flower.png obama.png out --results png --algo shuffle --res 512
-./imder photo1.jpg photo2.jpg out --results png --algo merge --res 1024
-./imder image1.webp image2.webp out --results gif --algo fusion --res 256
+./imder flower.png obama.png shuffle 512
+./imder photo1.jpg photo2.jpg merge 1024
+./imder image1.webp image2.webp fusion 256
 ```
 
 **Video to Video (with target audio):**
 
 ```bash
-./imder video1.mp4 video2.mp4 out --results mp4 --algo merge --sound target --sq 10
-./imder clip1.mov clip2.avi out --results mp4 --algo merge --sound target --sq 7
-./imder video1.mkv video2.mkv out --results gif mp4 --algo shuffle --sound target --sq 5
+./imder video1.mp4 video2.mp4 merge 512 target-sound 10
+./imder clip1.mov clip2.avi merge 512 target-sound 7
+./imder video1.mkv video2.mkv shuffle 512 target-sound 5
 ```
 
 **Image to Video (with pixel sound):**
 
 ```bash
-./imder photo.png video.mp4 out --results mp4 --algo merge --sound gen
-./imder image.jpg clip.mov out --results gif --algo shuffle --sound gen
+./imder photo.png video.mp4 merge 512 sound
+./imder image.jpg clip.mov shuffle 512 sound
 ```
 
 **Video to Image inputs (with generated sound):**
 
 ```bash
-./imder video.mp4 image.png out --results mp4 --algo merge --sound gen
+./imder video.mp4 image.png merge 512 sound
 ```
 
 ### Examples (Python Source)
@@ -439,14 +438,14 @@ python imder.py image.png image2.png merge 512 sound
 
 **Cause**: Not enough arguments provided
 
-**Solution**: Provide base, target and result folder (native binary) or base and target (python source):
+**Solution**: Provide base and target (result folder is fixed to `results/`):
 
 ```bash
 # Wrong
 ./imder image.png
 
 # Correct
-./imder image.png target.png results --results png
+./imder image.png target.png merge
 ```
 
 ### Issue: ImportError or ModuleNotFoundError
@@ -495,12 +494,12 @@ cd /workspace
 unzip imder_linux_v1.3.0_cpp.zip
 
 # Process multiple images
-./imder/imder ../data/image1.png ../data/image2.png out --results png --algo shuffle --res 512 && \
-./imder/imder ../data/image3.png ../data/image4.png out --results png --algo merge --res 1024 && \
-./imder/imder ../data/image5.png ../data/image6.png out --results gif --algo fusion --res 256
+./imder/imder ../data/image1.png ../data/image2.png shuffle 512 && \
+./imder/imder ../data/image3.png ../data/image4.png merge 1024 && \
+./imder/imder ../data/image5.png ../data/image6.png fusion 256
 
-# Move results (they are already inside ./out)
-ls out/
+# Move results (they land inside ./results)
+ls results/
 ```
 
 ### Workflow 2: Video Transformation with Audio
@@ -514,48 +513,48 @@ command -v ffmpeg || (wget -q https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-
     rm -rf /tmp/ffmpeg*)
 
 # Process videos with target audio (native binary)
-./imder video1.mp4 video2.mp4 out --results mp4 --algo merge --sound target --sq 10 && \
-./imder photo.png video.mp4 out --results mp4 --algo shuffle --sound target --sq 8 && \
-./imder intro.mp4 main.mp4 out --results mp4 --algo merge --sound target --sq 7
+./imder video1.mp4 video2.mp4 merge 512 target-sound 10 && \
+./imder photo.png video.mp4 shuffle 512 target-sound 8 && \
+./imder intro.mp4 main.mp4 merge 512 target-sound 7
 ```
 
 ### Workflow 3: Batch Video Processing with Generated Audio
 
 ```bash
-# Create output directory
-mkdir -p processed
+# Create the results directory (fixed output location)
+mkdir -p results
 
 # Process all pairs (native binary)
-./imder video_A1.mp4 video_A2.mp4 processed --results mp4 gif --algo merge --sound gen && \
-./imder video_B1.mp4 video_B2.mp4 processed --results mp4 gif --algo merge --sound gen && \
-./imder video_C1.mp4 video_C2.mp4 processed --results mp4 gif --algo merge --sound gen
+./imder video_A1.mp4 video_A2.mp4 merge 512 sound && \
+./imder video_B1.mp4 video_B2.mp4 merge 512 sound && \
+./imder video_C1.mp4 video_C2.mp4 merge 512 sound
 
-# Outputs land inside ./processed as imder_<timestamp>.mp4/.gif
-ls processed/
+# Outputs land inside ./results as video_<timestamp>.mp4 and animation_<timestamp>.gif
+ls results/
 ```
 
 ### Workflow 4: Single Command with All Parameters
 
 ```bash
-./imder /path/to/base.png /path/to/target.mp4 out --results mp4 --algo merge --res 1024 --sound target --sq 10
+./imder /path/to/base.png /path/to/target.mp4 merge 1024 target-sound 10
 ```
 
-This processes base.png against target.mp4 using the merge algorithm at 1024x1024 resolution, extracting audio from the target video at 100% quality into ./out as imder_<timestamp>.mp4.
+This processes base.png against target.mp4 using the merge algorithm at 1024x1024 resolution, extracting audio from the target video at 100% quality into results/ as video_<timestamp>.mp4.
 
 ---
 
 ## Summary for AI Agents
 
-1. **Prefer the native binary**: one small exe, no python deps, same syntax as the Python library
-2. **Always use one-liner commands**: `./imder base target out --results png && ./imder base target out --results png`
-3. **Results are required**: pass a result folder and `--results` with at least one of png/gif/mp4
+1. **Prefer the native binary**: one small exe, no python deps, same positional syntax as the Python imder.py CLI
+2. **Always use one-liner commands**: `./imder base target merge && ./imder base target shuffle`
+3. **Fixed output location**: everything lands inside `results/` — image pairs produce png + gif + mp4, runs with a video produce mp4 + gif
 4. **Install FFmpeg**: Required for video + audio features
 5. **Use absolute paths**: Avoid relative path issues
-6. **For videos**: Use only `shuffle`, `merge` or `missform` algorithms; PNG is not available for video inputs
-7. **For audio**: Use `--sound gen` (synthesized) or `--sound target` (extracted), with `--sq` 1-10 or `--sq_hz` 8000-192000
-8. **Output location**: Outputs land inside the result folder you pass, named `imder_<timestamp>.<ext>`
+6. **For videos**: Use only `shuffle`, `merge` or `missform` algorithms; fusion is image-pairs only
+7. **For audio**: Use `sound` (synthesized) or `target-sound` (extracted), with quality 1-10 for target-sound
+8. **Output names**: `image_<timestamp>.png`, `animation_<timestamp>.gif`, `video_<timestamp>.mp4` inside `results/`
 9. **No shape analysis in CLI**: Use the GUI for mask-based algorithms and Reborn
-10. **Video runs stream**: no full-video memory loads, base video fps preserved like the Python library
+10. **Video runs stream**: no full-video memory loads; video-video runs pick the fps of the shorter-duration side like the Python CLI
 
 ---
 
